@@ -1,13 +1,13 @@
 //+------------------------------------------------------------------+
 //|                                       CC_TradingManagement.mq5   |
-//|                        CC Trading Management  v4.10              |
+//|                        CC Trading Management  v4.20              |
 //|                                                                  |
 //|   YouTube : https://www.youtube.com/@ChartAndChill               |
 //|   This tool is FREE - forever. Please subscribe to support it.   |
 //+------------------------------------------------------------------+
 #property copyright "ChartAndChill"
 #property link      "https://www.youtube.com/@ChartAndChill"
-#property version   "4.10"
+#property version   "4.20"
 #property description "CC Trading Management - risk & execution panel with a TradingView style position tool"
 #property description "Tools: Camarilla | Sessions | POC + Value Area | VWAP | Hooman levels"
 #property description "YouTube: @ChartAndChill - free forever, please subscribe."
@@ -817,7 +817,7 @@ int OnInit()
    if(!gTester)
    {
       Print("+--------------------------------------------------------+");
-      Print("|            CC TRADING MANAGEMENT  v4.10                |");
+      Print("|            CC TRADING MANAGEMENT  v4.20                |");
       Print("|   FREE forever - please subscribe on YouTube:          |");
       Print("|            youtube.com/@ChartAndChill                  |");
       Print("|   Drag the panel by its title bar. Drag the coloured   |");
@@ -938,7 +938,13 @@ void OnChartEvent(const int id,const long &lparam,const double &dparam,const str
       return;
    }
 
-   if(id==CHARTEVENT_CHART_CHANGE){ ClampPos(); ApplyPos(); return; }
+   if(id==CHARTEVENT_CHART_CHANGE)
+   {
+      ClampPos(); ApplyPos();
+      if(gTool!=0) ToolLabels();          // pixel pills follow scroll / zoom
+      ChartRedraw();
+      return;
+   }
 
    //--- a chart line was dragged and released
    if(id==CHARTEVENT_OBJECT_DRAG)
@@ -1787,33 +1793,100 @@ void ToolLine(string id,double price,color c,int wd,ENUM_LINE_STYLE st)
    ObjectSetInteger(0,n,OBJPROP_STYLE,st);
 }
 
-//--- TradingView style labels inside the boxes
+//--- TradingView style labels: filled pills centred in the box, a grey
+//--- two-line P&L pill on the entry, and a dashed line from the entry
+//--- point to the current price. Pills live in pixel space, so they are
+//--- re-placed on every refresh and whenever the chart scrolls or zooms.
 void ToolLabels()
 {
+   if(gTool==0) return;
    bool lng=(gTool==1);
    double lot=ToolLot();
    ENUM_ORDER_TYPE ot=lng?ORDER_TYPE_BUY:ORDER_TYPE_SELL;
    double pt=SymbolInfoDouble(_Symbol,SYMBOL_POINT);
-   double pTP=0,pSL=0;
+   double pTP=0,pSL=0,pNow=0;
    if(!OrderCalcProfit(ot,_Symbol,lot,gToolEntry,gToolTP,pTP)) pTP=0;
    if(!OrderCalcProfit(ot,_Symbol,lot,gToolEntry,gToolSL,pSL)) pSL=0;
+   double cur=lng?SymbolInfoDouble(_Symbol,SYMBOL_BID):SymbolInfoDouble(_Symbol,SYMBOL_ASK);
+   if(gToolLive && PositionSelectByTicket(gToolTicket))
+      pNow=PositionGetDouble(POSITION_PROFIT)+PositionGetDouble(POSITION_SWAP);
+   else if(cur<=0.0 || !OrderCalcProfit(ot,_Symbol,lot,gToolEntry,cur,pNow)) pNow=0;
+
    double pctTP=(gToolEntry>0)?MathAbs(gToolTP-gToolEntry)/gToolEntry*100.0:0;
    double pctSL=(gToolEntry>0)?MathAbs(gToolSL-gToolEntry)/gToolEntry*100.0:0;
    double rr=(MathAbs(gToolSL-gToolEntry)>0)?MathAbs(gToolTP-gToolEntry)/MathAbs(gToolSL-gToolEntry):0;
-   string cur=AccountInfoString(ACCOUNT_CURRENCY);
 
-   string sTP="Target "+DoubleToString(gToolTP,_Digits)+"  (+"+DoubleToString(pctTP,2)+"%)  "+
-              DoubleToString(MathAbs(gToolTP-gToolEntry)/pt,0)+" pts   Amount "+Money(pTP)+" "+cur;
-   string sSL="Stop "+DoubleToString(gToolSL,_Digits)+"  (-"+DoubleToString(pctSL,2)+"%)  "+
-              DoubleToString(MathAbs(gToolSL-gToolEntry)/pt,0)+" pts   Amount "+Money(pSL)+" "+cur;
-   string sEN=(lng?"LONG ":"SHORT ")+DoubleToString(lot,VolDigits())+" lot @ "+DoubleToString(gToolEntry,_Digits)+
-              "   Risk/Reward "+DoubleToString(rr,2);
-   if(gToolLive && PositionSelectByTicket(gToolTicket))
-      sEN+="   P/L "+Money(PositionGetDouble(POSITION_PROFIT)+PositionGetDouble(POSITION_SWAP))+" "+cur;
+   string sTP="Target: "+DoubleToString(gToolTP,_Digits)+" ("+DoubleToString(pctTP,2)+"%) "+
+              DoubleToString(MathAbs(gToolTP-gToolEntry)/pt,0)+", Amount: "+DoubleToString(MathAbs(pTP),2);
+   string sSL="Stop: "+DoubleToString(gToolSL,_Digits)+" ("+DoubleToString(pctSL,2)+"%) "+
+              DoubleToString(MathAbs(gToolSL-gToolEntry)/pt,0)+", Amount: "+DoubleToString(MathAbs(pSL),2);
+   string sM1="Open P&L: "+Money(pNow)+", Qty: "+DoubleToString(lot,VolDigits());
+   string sM2="Risk/Reward Ratio: "+DoubleToString(rr,2);
 
-   TagAt(TP_+"ltp",gToolT1,gToolTP,sTP,InpTpColor,8,lng?ANCHOR_LEFT_UPPER:ANCHOR_LEFT_LOWER,false);
-   TagAt(TP_+"lsl",gToolT1,gToolSL,sSL,InpSlColor,8,lng?ANCHOR_LEFT_LOWER:ANCHOR_LEFT_UPPER,false);
-   TagAt(TP_+"len",gToolT1,gToolEntry,sEN,InpEntryColor,8,lng?ANCHOR_LEFT_LOWER:ANCHOR_LEFT_UPPER,false);
+   //--- pixel geometry of the box
+   int x1=0,x2=0,yE=0,yT=0,yS=0,d=0;
+   bool ok=ChartTimePriceToXY(0,0,gToolT1,gToolEntry,x1,yE);
+   ok=ChartTimePriceToXY(0,0,gToolT2,gToolEntry,x2,d) && ok;
+   ok=ChartTimePriceToXY(0,0,gToolT1,gToolTP,d,yT) && ok;
+   ok=ChartTimePriceToXY(0,0,gToolT1,gToolSL,d,yS) && ok;
+   int xc=(x1+x2)/2;
+
+   Pill("pt" ,xc,lng?yT+3:yT-21,sTP,InpTpColor,ok);
+   Pill("ps" ,xc,lng?yS-21:yS+3,sSL,InpSlColor,ok);
+   Pill("pm1",xc,yE-19,sM1,C'110,114,126',ok);
+   Pill("pm2",xc,yE+1 ,sM2,C'110,114,126',ok);
+
+   //--- dashed line from the entry point to the current price
+   datetime tNow=iTime(_Symbol,PERIOD_CURRENT,0);
+   string n=TP_+"pnl";
+   if(cur>0.0 && tNow>0)
+   {
+      if(ObjectFind(0,n)<0)
+      {
+         ObjectCreate(0,n,OBJ_TREND,0,gToolT1,gToolEntry,tNow,cur);
+         ObjectSetInteger(0,n,OBJPROP_RAY_RIGHT,false);
+         ObjectSetInteger(0,n,OBJPROP_STYLE,STYLE_DASH);
+         ObjectSetInteger(0,n,OBJPROP_WIDTH,1);
+         ObjectSetInteger(0,n,OBJPROP_COLOR,C'150,155,170');
+         ObjectSetInteger(0,n,OBJPROP_BACK,false);
+         ObjectSetInteger(0,n,OBJPROP_SELECTABLE,false);
+         ObjectSetInteger(0,n,OBJPROP_HIDDEN,true);
+      }
+      ObjectMove(0,n,0,gToolT1,gToolEntry);
+      ObjectMove(0,n,1,tNow,cur);
+   }
+}
+
+//--- a filled, centred, read-only text pill in pixel space
+void Pill(string id,int xc,int y,string text,color bg,bool visible)
+{
+   string n=TP_+id;
+   int w=(int)(StringLen(text)*6.3)+16,h=18;
+   int cw=(int)ChartGetInteger(0,CHART_WIDTH_IN_PIXELS);
+   int ch=(int)ChartGetInteger(0,CHART_HEIGHT_IN_PIXELS);
+   int x=xc-w/2;
+   bool vis=visible && (x+w>0 && x<cw && y+h>0 && y<ch);
+   if(ObjectFind(0,n)<0)
+   {
+      ObjectCreate(0,n,OBJ_EDIT,0,0,0);
+      ObjectSetInteger(0,n,OBJPROP_CORNER,CORNER_LEFT_UPPER);
+      ObjectSetInteger(0,n,OBJPROP_READONLY,true);
+      ObjectSetInteger(0,n,OBJPROP_ALIGN,ALIGN_CENTER);
+      ObjectSetString (0,n,OBJPROP_FONT,FONT_UI);
+      ObjectSetInteger(0,n,OBJPROP_FONTSIZE,8);
+      ObjectSetInteger(0,n,OBJPROP_COLOR,C'255,255,255');
+      ObjectSetInteger(0,n,OBJPROP_SELECTABLE,false);
+      ObjectSetInteger(0,n,OBJPROP_HIDDEN,true);
+      ObjectSetInteger(0,n,OBJPROP_ZORDER,4);
+   }
+   ObjectSetInteger(0,n,OBJPROP_XDISTANCE,x);
+   ObjectSetInteger(0,n,OBJPROP_YDISTANCE,y);
+   ObjectSetInteger(0,n,OBJPROP_XSIZE,w);
+   ObjectSetInteger(0,n,OBJPROP_YSIZE,h);
+   ObjectSetInteger(0,n,OBJPROP_BGCOLOR,bg);
+   ObjectSetInteger(0,n,OBJPROP_BORDER_COLOR,bg);
+   if(ObjectGetString(0,n,OBJPROP_TEXT)!=text) ObjectSetString(0,n,OBJPROP_TEXT,text);
+   ObjectSetInteger(0,n,OBJPROP_TIMEFRAMES,vis?OBJ_ALL_PERIODS:OBJ_NO_PERIODS);
 }
 
 //--- everything from the current state

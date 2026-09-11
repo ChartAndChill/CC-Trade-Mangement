@@ -40,11 +40,14 @@ Panel position and collapsed state persist between restarts.
 
 Press **LONG** or **SHORT**. Two coloured boxes appear at the current price with
 the stepper's stop distance and R:R: a green profit box from entry to **Target**
-and a red loss box from entry to **Stop**, with crisp edge lines and a dashed
-entry line. Labels inside the boxes read like TradingView's:
-`Target 1.23456 (+0.85%) 170 pts Amount +120.00 USD`,
-`Stop 1.23400 (-0.42%) 85 pts Amount -60.00 USD`, and on the entry
-`LONG 0.50 lot @ 1.23456 Risk/Reward 2.00` (plus live P/L once attached).
+and a red loss box from entry to **Stop**, with crisp edge lines. The labels are
+TradingView's filled pills, centred in the box: a green
+`Target: 1.23456 (0.85%) 170, Amount: 120.00` at the top, a red
+`Stop: 1.23400 (0.42%) 85, Amount: 60.00` at the bottom, and a grey two-line
+pill on the entry with `Open P&L: +12.30, Qty: 0.50` and
+`Risk/Reward Ratio: 2.00`. Open P&L is the tool's result at the current price
+(the real position's profit once attached). A dashed line runs from the entry
+point to the current price, exactly as in TradingView.
 
 The boxes are the handles — every part can be moved or resized:
 
