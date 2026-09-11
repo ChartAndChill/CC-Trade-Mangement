@@ -1795,8 +1795,8 @@ void ToolLabels()
    ENUM_ORDER_TYPE ot=lng?ORDER_TYPE_BUY:ORDER_TYPE_SELL;
    double pt=SymbolInfoDouble(_Symbol,SYMBOL_POINT);
    double pTP=0,pSL=0;
-   OrderCalcProfit(ot,_Symbol,lot,gToolEntry,gToolTP,pTP);
-   OrderCalcProfit(ot,_Symbol,lot,gToolEntry,gToolSL,pSL);
+   if(!OrderCalcProfit(ot,_Symbol,lot,gToolEntry,gToolTP,pTP)) pTP=0;
+   if(!OrderCalcProfit(ot,_Symbol,lot,gToolEntry,gToolSL,pSL)) pSL=0;
    double pctTP=(gToolEntry>0)?MathAbs(gToolTP-gToolEntry)/gToolEntry*100.0:0;
    double pctSL=(gToolEntry>0)?MathAbs(gToolSL-gToolEntry)/gToolEntry*100.0:0;
    double rr=(MathAbs(gToolSL-gToolEntry)>0)?MathAbs(gToolTP-gToolEntry)/MathAbs(gToolSL-gToolEntry):0;
@@ -2015,8 +2015,8 @@ void ToolPanelRows()
    double lot=ToolLot();
    ENUM_ORDER_TYPE ot=lng?ORDER_TYPE_BUY:ORDER_TYPE_SELL;
    double pTP=0,pSL=0;
-   OrderCalcProfit(ot,_Symbol,lot,gToolEntry,gToolTP,pTP);
-   OrderCalcProfit(ot,_Symbol,lot,gToolEntry,gToolSL,pSL);
+   if(!OrderCalcProfit(ot,_Symbol,lot,gToolEntry,gToolTP,pTP)) pTP=0;
+   if(!OrderCalcProfit(ot,_Symbol,lot,gToolEntry,gToolSL,pSL)) pSL=0;
    double pctTP=(gToolEntry>0)?MathAbs(gToolTP-gToolEntry)/gToolEntry*100.0:0;
    double pctSL=(gToolEntry>0)?MathAbs(gToolSL-gToolEntry)/gToolEntry*100.0:0;
    double rr=(MathAbs(gToolSL-gToolEntry)>0)?MathAbs(gToolTP-gToolEntry)/MathAbs(gToolSL-gToolEntry):0;
@@ -2314,8 +2314,7 @@ void AutoStrategy(bool newBar)
       if(!gFloorSaid){ gFloorSaid=true; Print("[CC] tester strategy halted: equity below ",DoubleToString(TESTER_EQ_FLOOR*100.0,0),"% of start"); }
       return;
    }
-   double f[2],s[2],a[1];
-   ArraySetAsSeries(f,false); ArraySetAsSeries(s,false); ArraySetAsSeries(a,false);
+   double f[2],s[2],a[1];             // static arrays: index 0 = older bar
    if(CopyBuffer(hFast,0,1,2,f)<2) return;
    if(CopyBuffer(hSlow,0,1,2,s)<2) return;
    if(CopyBuffer(hAtr ,0,1,1,a)<1) return;
