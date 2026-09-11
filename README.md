@@ -41,7 +41,7 @@ Panel position and collapsed state persist between restarts.
 The **TP/SL** button in TOOLS cycles **off → LONG → SHORT → off** (it works like
 the SESSIONS and HOOMAN toggles). Two coloured boxes appear at the current price
 with the stepper's stop distance and R:R: a green profit box from entry to **Target**
-and a red loss box from entry to **Stop**, with crisp edge lines. The labels are
+and a red loss box from entry to **Stop**, with no extra lines. The labels are
 TradingView's filled pills, centred in the box: a green
 `Target: 1.23456 (0.85%) 170, Amount: 120.00` at the top, a red
 `Stop: 1.23400 (0.42%) 85, Amount: 60.00` at the bottom, and a grey two-line
@@ -50,21 +50,23 @@ pill on the entry with `Open P&L: +12.30, Qty: 0.50` and
 (the real position's profit once attached). A dashed line runs from the entry
 point to the current price, exactly as in TradingView.
 
-The handles are full-width lines, which is the smoothest thing MT5 can drag:
-grab them anywhere on the chart, they are always armed (no click-to-select
-first), and they only move vertically.
+Every part of the tool is a handle, and all of them are always armed (no
+click-to-select first):
 
 | Grab | Effect |
 |---|---|
-| the green **Target** line | Target resizes |
-| the red **Stop** line | Stop resizes |
-| the dashed **Entry** line | the whole tool moves (planner only) |
-| the grey handle on the left or right side of the box | the box gets wider or narrower |
+| a box body, or the grey P&L pill | the whole tool moves |
+| the green **Target** pill, or the outer corner of the green box | Target resizes |
+| the red **Stop** pill, or the outer corner of the red box | Stop resizes |
+| the entry corner of either box | Entry moves (planner only) |
+| any corner sideways | the box gets wider or narrower |
+| **Target (or Stop) pulled across the entry** | the tool **flips** LONG ↔ SHORT, the colours swap and the other level is mirrored |
 
-Boxes, pills and the P&L line follow the mouse while you drag. A Stop or Target
-cannot be dropped on the wrong side of the entry — the line snaps back. The box
-is kept ahead of the current bar automatically. While a position is open the
-button reads **LIVE** and toggles the overlay on and off.
+Boxes, pills, the panel rows and the P&L line follow the mouse while you drag.
+A level dropped inside the minimum stop distance of the entry snaps back. The
+box is kept ahead of the current bar automatically. While a position is open
+the button reads **LIVE**, toggles the overlay on and off, the entry stays at
+the fill and flipping is disabled.
 
 - **BUY / SELL** use the tool's levels and its lot (or the typed lot). **BUY LMT
   / SELL LMT** use the tool's entry as the limit price.

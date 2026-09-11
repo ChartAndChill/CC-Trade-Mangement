@@ -1,13 +1,13 @@
 //+------------------------------------------------------------------+
 //|                                       CC_TradingManagement.mq5   |
-//|                        CC Trading Management  v4.40              |
+//|                        CC Trading Management  v4.50              |
 //|                                                                  |
 //|   YouTube : https://www.youtube.com/@ChartAndChill               |
 //|   This tool is FREE - forever. Please subscribe to support it.   |
 //+------------------------------------------------------------------+
 #property copyright "ChartAndChill"
 #property link      "https://www.youtube.com/@ChartAndChill"
-#property version   "4.40"
+#property version   "4.50"
 #property description "CC Trading Management - risk & execution panel with a TradingView style position tool"
 #property description "Tools: Sessions | POC + Value Area | VWAP | Hooman levels"
 #property description "YouTube: @ChartAndChill - free forever, please subscribe."
@@ -163,6 +163,8 @@ datetime gToolT1=0,gToolT2=0;       // box time span
 bool     gToolHide=false;           // overlay hidden while a position is open
 double   bEntry=0,bSL=0,bTP=0;      // committed state (before the current drag)
 datetime bT1=0,bT2=0;
+int      bDir=0;
+int      gPillX[4],gPillY[4];       // where the tool pills were placed
 double   gToolPosSL=0,gToolPosTP=0;   // last values seen on the position
 
 //--- misc
@@ -803,7 +805,7 @@ int OnInit()
    if(!gTester)
    {
       Print("+--------------------------------------------------------+");
-      Print("|            CC TRADING MANAGEMENT  v4.40                |");
+      Print("|            CC TRADING MANAGEMENT  v4.50                |");
       Print("|   FREE forever - please subscribe on YouTube:          |");
       Print("|            youtube.com/@ChartAndChill                  |");
       Print("|   Drag the panel by its title bar. Drag the coloured   |");
@@ -927,7 +929,7 @@ void OnChartEvent(const int id,const long &lparam,const double &dparam,const str
    if(id==CHARTEVENT_CHART_CHANGE)
    {
       ClampPos(); ApplyPos();
-      if(gTool!=0) ToolLabels();          // pixel pills follow scroll / zoom
+      if(gTool!=0) ToolLabels("");        // pixel pills follow scroll / zoom
       if(gSess)    SessPills();
       ChartRedraw();
       return;
@@ -1234,7 +1236,8 @@ void SessDrop(string id)
    ObjectDelete(0,SP+id);
    ObjectDelete(0,SP+id+"h");
    ObjectDelete(0,SP+id+"l");
-   ObjectDelete(0,SP+id+"p");
+   ObjectDelete(0,SP+id+"pb");
+   ObjectDelete(0,SP+id+"pt");
 }
 
 void SessBox(string id,long gmtBase,long off,int hOpen,int hClose,string title,color c)
@@ -1282,7 +1285,7 @@ void SessBox(string id,long gmtBase,long off,int hOpen,int hClose,string title,c
 
    double pt=SymbolInfoDouble(_Symbol,SYMBOL_POINT);
    string txt=title+"   "+DoubleToString((ph-pl)/pt,0)+" p";
-   PillXY(SP+id+"p",0,0,txt,c,7,false);              // text / colour; placed below
+   PillXY(SP+id+"p",0,0,txt,c,7,false,false);        // text / colour; placed below
    SessPlace(id);
 }
 
@@ -1290,7 +1293,7 @@ void SessBox(string id,long gmtBase,long off,int hOpen,int hClose,string title,c
 void SessPlace(string id)
 {
    string r=SP+id,n=SP+id+"p";
-   if(ObjectFind(0,r)<0 || ObjectFind(0,n)<0) return;
+   if(ObjectFind(0,r)<0 || ObjectFind(0,n+"t")<0) return;
    datetime t1=(datetime)ObjectGetInteger(0,r,OBJPROP_TIME,0);
    datetime t2=(datetime)ObjectGetInteger(0,r,OBJPROP_TIME,1);
    double ph=ObjectGetDouble(0,r,OBJPROP_PRICE,0);
@@ -1299,9 +1302,7 @@ void SessPlace(string id)
    int cw=(int)ChartGetInteger(0,CHART_WIDTH_IN_PIXELS);
    int x=x1+4;
    if(x<4 && x2>60) x=4;                              // box starts off screen: keep the tag readable
-   string txt=ObjectGetString(0,n,OBJPROP_TEXT);
-   color c=(color)ObjectGetInteger(0,n,OBJPROP_BGCOLOR);
-   PillXY(n,x,y1+4,txt,c,7,ok && x<cw && x2>0);
+   PillXY(n,x,y1+4,PillText(n),PillBg(n),7,ok && x<cw && x2>0,false);
 }
 
 void SessPills()
@@ -1629,15 +1630,21 @@ void HoomanDragged(string name)
 
 //==================================================================
 //   TP / SL TOOL  (TradingView style)
-//   One toggle in TOOLS cycles OFF -> LONG -> SHORT. The draggable
-//   parts are full-width horizontal lines - the smoothest thing MT5
-//   can drag: grab the Target or Stop line anywhere and pull it, grab
-//   the Entry line to move the whole tool, grab the grey handle on
-//   either side of the box to make it wider or narrower. The green
-//   profit box, red loss box, pills and P&L line follow live.
-//   Planner while flat (BUY / SELL use its levels and lot); attached
-//   to the real position once one exists, where moving Stop / Target
-//   modifies the position.
+//   Two coloured boxes and three text pills - and every one of them
+//   is a handle:
+//     - drag a box body or the grey P&L pill   -> the whole tool moves
+//     - drag the green Target pill, or the outer corner of the green
+//       box                                    -> Target resizes
+//     - drag the red Stop pill, or the outer corner of the red box
+//                                              -> Stop resizes
+//     - drag the entry corner of either box    -> Entry moves
+//     - drag any corner sideways               -> box width changes
+//     - drag Target (or Stop) across the entry -> the tool flips
+//       LONG <-> SHORT and the colours swap
+//   Everything follows live while the mouse is down. One toggle in
+//   TOOLS cycles OFF -> LONG -> SHORT. Planner while flat (BUY / SELL
+//   use its levels and lot); attached to the real position once one
+//   exists, where moving Stop / Target modifies the position.
 //==================================================================
 void ToolPlace(int dir)
 {
@@ -1657,7 +1664,7 @@ void ToolPlace(int dir)
    ToolCommit();
    ToolDrawAll();
    ToolButton();
-   Say((dir==1?"LONG":"SHORT")+" tool - drag the lines, side handles set the width");
+   Say((dir==1?"LONG":"SHORT")+" tool - drag any part of it");
 }
 
 //--- the TOOLS toggle: OFF -> LONG -> SHORT -> OFF, or show / hide while live
@@ -1683,19 +1690,18 @@ bool ToolHasPosition()
    return(FindOurPosition(type,open,sl,tp,when,vol)!=0);
 }
 
-//--- label + colour of the toggle button
 void ToolButton()
 {
    string t="TP/SL"; color bg=gcBtn,fg=gcBtnTx;
-   if(gToolHide)            { t="TP/SL"; }
-   else if(gToolLive)       { t="LIVE";  bg=gcOn;       fg=gcOnTx; }
-   else if(gTool==1)        { t="LONG";  bg=gcBuySoft;  fg=gcBuySoftTx; }
-   else if(gTool==2)        { t="SHORT"; bg=gcSellSoft; fg=gcSellSoftTx; }
+   if(gToolHide)       { t="TP/SL"; }
+   else if(gToolLive)  { t="LIVE";  bg=gcOn;       fg=gcOnTx; }
+   else if(gTool==1)   { t="LONG";  bg=gcBuySoft;  fg=gcBuySoftTx; }
+   else if(gTool==2)   { t="SHORT"; bg=gcSellSoft; fg=gcSellSoftTx; }
    SetT("tps",t); SetBg("tps",bg); SetC("tps",fg);
 }
 
-void ToolCommit()  { bEntry=gToolEntry; bSL=gToolSL; bTP=gToolTP; bT1=gToolT1; bT2=gToolT2; }
-void ToolRestore() { gToolEntry=bEntry; gToolSL=bSL; gToolTP=bTP; gToolT1=bT1; gToolT2=bT2; }
+void ToolCommit()  { bEntry=gToolEntry; bSL=gToolSL; bTP=gToolTP; bT1=gToolT1; bT2=gToolT2; bDir=gTool; }
+void ToolRestore() { gToolEntry=bEntry; gToolSL=bSL; gToolTP=bTP; gToolT1=bT1; gToolT2=bT2; gTool=bDir; }
 
 void ToolClear()
 {
@@ -1705,7 +1711,7 @@ void ToolClear()
    ToolButton();
 }
 
-//--- planner levels follow the steppers until a line is dragged
+//--- planner levels follow the steppers until something is dragged
 void ToolRefit()
 {
    if(gTool==0 || gToolLive) return;
@@ -1784,63 +1790,39 @@ void ToolSync()
    if(changed){ ToolCommit(); ToolDrawAll(); }
 }
 
-//--- visual box (never selectable: the lines take the mouse)
-void ToolBox(string id,double pA,double pB,color c)
+//--- canonical box corners for the current state
+void ToolBoxCorners(string id,datetime &t1,double &p1,datetime &t2,double &p2)
 {
-   RectAt(TP_+id,gToolT1,pA,gToolT2,pB,Translucent(c,InpToolOpacity),true);
+   t1=gToolT1; t2=gToolT2;
+   if(id=="zp"){ p1=gToolEntry; p2=gToolTP; }      // corner 0 = entry, corner 1 = target
+   else        { p1=gToolSL;    p2=gToolEntry; }   // corner 0 = stop,  corner 1 = entry
 }
 
-//--- draggable full-width level
-void ToolHLine(string id,double price,color c,int wd,ENUM_LINE_STYLE st,bool drag)
+//--- a draggable, filled, translucent box
+void ToolBox(string id,color c)
 {
    string n=TP_+id;
-   bool fresh=(ObjectFind(0,n)<0);
-   if(fresh)
+   datetime t1,t2; double p1,p2;
+   ToolBoxCorners(id,t1,p1,t2,p2);
+   if(ObjectFind(0,n)<0)
    {
-      ObjectCreate(0,n,OBJ_HLINE,0,0,price);
-      ObjectSetInteger(0,n,OBJPROP_BACK,false);
-      ObjectSetInteger(0,n,OBJPROP_HIDDEN,true);
-      ObjectSetInteger(0,n,OBJPROP_ZORDER,3);
-   }
-   ObjectSetDouble (0,n,OBJPROP_PRICE,0,price);
-   ObjectSetInteger(0,n,OBJPROP_COLOR,c);
-   ObjectSetInteger(0,n,OBJPROP_WIDTH,wd);
-   ObjectSetInteger(0,n,OBJPROP_STYLE,st);
-   ObjectSetInteger(0,n,OBJPROP_SELECTABLE,drag);
-   ObjectSetInteger(0,n,OBJPROP_SELECTED,drag);      // always armed: one gesture drags it
-   ObjectSetString (0,n,OBJPROP_TOOLTIP,drag?"Drag":"");
-}
-
-//--- draggable side handle: a short vertical segment from stop to target
-void ToolEdge(string id,datetime t)
-{
-   string n=TP_+id;
-   double lo=MathMin(gToolSL,gToolTP),hi=MathMax(gToolSL,gToolTP);
-   bool fresh=(ObjectFind(0,n)<0);
-   if(fresh)
-   {
-      ObjectCreate(0,n,OBJ_TREND,0,t,lo,t,hi);
-      ObjectSetInteger(0,n,OBJPROP_RAY_RIGHT,false);
-      ObjectSetInteger(0,n,OBJPROP_BACK,false);
-      ObjectSetInteger(0,n,OBJPROP_HIDDEN,true);
+      ObjectCreate(0,n,OBJ_RECTANGLE,0,t1,p1,t2,p2);
+      ObjectSetInteger(0,n,OBJPROP_FILL,true);
+      ObjectSetInteger(0,n,OBJPROP_BACK,true);
       ObjectSetInteger(0,n,OBJPROP_SELECTABLE,true);
-      ObjectSetInteger(0,n,OBJPROP_SELECTED,true);
-      ObjectSetInteger(0,n,OBJPROP_ZORDER,3);
-      ObjectSetString (0,n,OBJPROP_TOOLTIP,"Drag to change the box width");
+      ObjectSetInteger(0,n,OBJPROP_HIDDEN,true);
+      ObjectSetString (0,n,OBJPROP_TOOLTIP,"Drag: move the tool  |  corner: resize");
    }
-   ObjectMove(0,n,0,t,lo);
-   ObjectMove(0,n,1,t,hi);
-   ObjectSetInteger(0,n,OBJPROP_SELECTED,true);
-   ObjectSetInteger(0,n,OBJPROP_COLOR,C'150,155,170');
-   ObjectSetInteger(0,n,OBJPROP_WIDTH,3);
-   ObjectSetInteger(0,n,OBJPROP_STYLE,STYLE_SOLID);
+   ObjectMove(0,n,0,t1,p1);
+   ObjectMove(0,n,1,t2,p2);
+   ObjectSetInteger(0,n,OBJPROP_SELECTED,true);           // always armed
+   ObjectSetInteger(0,n,OBJPROP_COLOR,Translucent(c,InpToolOpacity));
 }
 
-//--- TradingView style labels: filled pills centred in the box, a grey
-//--- two-line P&L pill on the entry, and a dashed line from the entry
-//--- point to the current price. Pills live in pixel space, so they are
-//--- re-placed on every refresh and whenever the chart scrolls or zooms.
-void ToolLabels()
+//--- TradingView style pills centred in the box (every pill is a handle),
+//--- and the dashed line from the entry point to the current price.
+//--- skip = the pill being dragged right now: it is not re-placed.
+void ToolLabels(string skip)
 {
    if(gTool==0) return;
    bool lng=(gTool==1);
@@ -1866,7 +1848,6 @@ void ToolLabels()
    string sM1="Open P&L: "+Money(pNow)+", Qty: "+DoubleToString(lot,VolDigits());
    string sM2="Risk/Reward Ratio: "+DoubleToString(rr,2);
 
-   //--- pixel geometry of the box
    int x1=0,x2=0,yE=0,yT=0,yS=0,d=0;
    bool ok=ChartTimePriceToXY(0,0,gToolT1,gToolEntry,x1,yE);
    ok=ChartTimePriceToXY(0,0,gToolT2,gToolEntry,x2,d) && ok;
@@ -1874,12 +1855,11 @@ void ToolLabels()
    ok=ChartTimePriceToXY(0,0,gToolT1,gToolSL,d,yS) && ok;
    int xc=(x1+x2)/2;
 
-   PillXY(TP_+"pt" ,xc-PillW(sTP,8)/2,lng?yT+3:yT-21,sTP,InpTpColor,8,ok);
-   PillXY(TP_+"ps" ,xc-PillW(sSL,8)/2,lng?yS-21:yS+3,sSL,InpSlColor,8,ok);
-   PillXY(TP_+"pm1",xc-PillW(sM1,8)/2,yE-19,sM1,C'110,114,126',8,ok);
-   PillXY(TP_+"pm2",xc-PillW(sM2,8)/2,yE+1 ,sM2,C'110,114,126',8,ok);
+   ToolPill(0,"pt" ,xc,lng?yT+3:yT-21,sTP,InpTpColor,ok,skip);
+   ToolPill(1,"ps" ,xc,lng?yS-21:yS+3,sSL,InpSlColor,ok,skip);
+   ToolPill(2,"pm1",xc,yE-19,sM1,C'110,114,126',ok,skip);
+   ToolPill(3,"pm2",xc,yE+1 ,sM2,C'110,114,126',ok,skip);
 
-   //--- dashed line from the entry point to the current price
    datetime tNow=iTime(_Symbol,PERIOD_CURRENT,0);
    string n=TP_+"pnl";
    if(cur>0.0 && tNow>0)
@@ -1900,37 +1880,21 @@ void ToolLabels()
    }
 }
 
-
-//--- pixel-space text pills (used by the position tool and the sessions)
-int PillW(string text,int fs){ return((int)(StringLen(text)*0.78*fs)+16); }
-
-void PillXY(string n,int x,int y,string text,color bg,int fs,bool visible)
+//--- one tool pill: xc,y is the top-centre; remembers where it was put
+void ToolPill(int k,string id,int xc,int y,string text,color bg,bool visible,string skip)
 {
-   int w=PillW(text,fs),h=fs*2+2;
-   int cw=(int)ChartGetInteger(0,CHART_WIDTH_IN_PIXELS);
-   int ch=(int)ChartGetInteger(0,CHART_HEIGHT_IN_PIXELS);
-   bool vis=visible && (x+w>0 && x<cw && y+h>0 && y<ch);
-   if(ObjectFind(0,n)<0)
+   int w=PillW(text,8);
+   int cx=xc,cy=y+(8*2+2)/2;
+   if(id==skip)
    {
-      ObjectCreate(0,n,OBJ_EDIT,0,0,0);
-      ObjectSetInteger(0,n,OBJPROP_CORNER,CORNER_LEFT_UPPER);
-      ObjectSetInteger(0,n,OBJPROP_READONLY,true);
-      ObjectSetInteger(0,n,OBJPROP_ALIGN,ALIGN_CENTER);
-      ObjectSetString (0,n,OBJPROP_FONT,FONT_UI);
-      ObjectSetInteger(0,n,OBJPROP_FONTSIZE,fs);
-      ObjectSetInteger(0,n,OBJPROP_SELECTABLE,false);
-      ObjectSetInteger(0,n,OBJPROP_HIDDEN,true);
-      ObjectSetInteger(0,n,OBJPROP_ZORDER,4);
+      // being dragged: the background follows the text, the text is not touched
+      string nt=TP_+id+"t";
+      int lx=(int)ObjectGetInteger(0,nt,OBJPROP_XDISTANCE),ly=(int)ObjectGetInteger(0,nt,OBJPROP_YDISTANCE);
+      PillXY(TP_+id,lx-w/2,ly-(8*2+2)/2,text,bg,8,visible,true,false);
+      return;
    }
-   ObjectSetInteger(0,n,OBJPROP_XDISTANCE,x);
-   ObjectSetInteger(0,n,OBJPROP_YDISTANCE,y);
-   ObjectSetInteger(0,n,OBJPROP_XSIZE,w);
-   ObjectSetInteger(0,n,OBJPROP_YSIZE,h);
-   ObjectSetInteger(0,n,OBJPROP_BGCOLOR,bg);
-   ObjectSetInteger(0,n,OBJPROP_BORDER_COLOR,bg);
-   ObjectSetInteger(0,n,OBJPROP_COLOR,TextOn(bg));
-   if(ObjectGetString(0,n,OBJPROP_TEXT)!=text) ObjectSetString(0,n,OBJPROP_TEXT,text);
-   ObjectSetInteger(0,n,OBJPROP_TIMEFRAMES,vis?OBJ_ALL_PERIODS:OBJ_NO_PERIODS);
+   PillXY(TP_+id,xc-w/2,y,text,bg,8,visible,true);
+   gPillX[k]=cx; gPillY[k]=cy;
 }
 
 //--- everything from the current state
@@ -1940,14 +1904,9 @@ void ToolDrawAll(){ ToolDrawExcept(""); }
 void ToolDrawExcept(string skip)
 {
    if(gTool==0) return;
-   ToolBox("zp",gToolEntry,gToolTP,InpTpColor);
-   ToolBox("zl",gToolEntry,gToolSL,InpSlColor);
-   if(skip!="tp") ToolHLine("tp",gToolTP,InpTpColor,2,STYLE_SOLID,true);
-   if(skip!="sl") ToolHLine("sl",gToolSL,InpSlColor,2,STYLE_SOLID,true);
-   if(skip!="en") ToolHLine("en",gToolEntry,InpEntryColor,1,STYLE_DASH,!gToolLive);
-   if(skip!="tl") ToolEdge("tl",gToolT1);
-   if(skip!="tr") ToolEdge("tr",gToolT2);
-   ToolLabels();
+   if(skip!="zp") ToolBox("zp",InpTpColor);
+   if(skip!="zl") ToolBox("zl",InpSlColor);
+   ToolLabels(skip);
 }
 
 //--- periodic upkeep: labels (live P/L) and keep the box ahead of price
@@ -1961,10 +1920,9 @@ void ToolRefresh()
       ToolDrawAll();
       return;
    }
-   ToolLabels();
+   ToolLabels("");
 }
 
-//--- lot the tool represents
 double ToolLot()
 {
    if(gToolLive && PositionSelectByTicket(gToolTicket)) return(PositionGetDouble(POSITION_VOLUME));
@@ -1974,55 +1932,103 @@ double ToolLot()
    return(LotByRisk((gTool==1)?ORDER_TYPE_BUY:ORDER_TYPE_SELL,gToolEntry,gToolSL,rm));
 }
 
-//--- which handle no longer matches the state = the one being dragged
+//--- which handle no longer sits where the state put it = being dragged
 string ToolDraggedObj()
 {
+   string pills[4]={"pt","ps","pm1","pm2"};
+   for(int k=0;k<4;k++)
+   {
+      string n=TP_+pills[k]+"t";
+      if(ObjectFind(0,n)<0) continue;
+      int lx=(int)ObjectGetInteger(0,n,OBJPROP_XDISTANCE),ly=(int)ObjectGetInteger(0,n,OBJPROP_YDISTANCE);
+      if(MathAbs(lx-gPillX[k])>=3 || MathAbs(ly-gPillY[k])>=3) return(pills[k]);
+   }
    double pt=SymbolInfoDouble(_Symbol,SYMBOL_POINT);
    long per=PeriodSeconds();
-   string n;
-   n=TP_+"tp"; if(ObjectFind(0,n)>=0 && MathAbs(ObjectGetDouble(0,n,OBJPROP_PRICE,0)-gToolTP)>=pt/2.0) return("tp");
-   n=TP_+"sl"; if(ObjectFind(0,n)>=0 && MathAbs(ObjectGetDouble(0,n,OBJPROP_PRICE,0)-gToolSL)>=pt/2.0) return("sl");
-   n=TP_+"en"; if(ObjectFind(0,n)>=0 && MathAbs(ObjectGetDouble(0,n,OBJPROP_PRICE,0)-gToolEntry)>=pt/2.0) return("en");
-   n=TP_+"tl"; if(ObjectFind(0,n)>=0 && MathAbs((long)ObjectGetInteger(0,n,OBJPROP_TIME,0)-(long)gToolT1)>=per/2) return("tl");
-   n=TP_+"tr"; if(ObjectFind(0,n)>=0 && MathAbs((long)ObjectGetInteger(0,n,OBJPROP_TIME,0)-(long)gToolT2)>=per/2) return("tr");
+   string boxes[2]={"zp","zl"};
+   for(int k=0;k<2;k++)
+   {
+      string n=TP_+boxes[k];
+      if(ObjectFind(0,n)<0) continue;
+      datetime t1,t2; double p1,p2;
+      ToolBoxCorners(boxes[k],t1,p1,t2,p2);
+      if(MathAbs(ObjectGetDouble(0,n,OBJPROP_PRICE,0)-p1)>=pt/2.0) return(boxes[k]);
+      if(MathAbs(ObjectGetDouble(0,n,OBJPROP_PRICE,1)-p2)>=pt/2.0) return(boxes[k]);
+      if(MathAbs((long)ObjectGetInteger(0,n,OBJPROP_TIME,0)-(long)t1)>=per/2) return(boxes[k]);
+      if(MathAbs((long)ObjectGetInteger(0,n,OBJPROP_TIME,1)-(long)t2)>=per/2) return(boxes[k]);
+   }
    return("");
 }
 
-//--- read one handle and work out the tool it describes
-bool ToolDerive(string id,double &nE,double &nS,double &nT,datetime &nT1,datetime &nT2)
+//--- read one handle and work out the tool it describes, relative to
+//--- the committed state; a target or stop pulled across the entry
+//--- flips the tool and mirrors the other level
+bool ToolDerive(string id,int &nDir,double &nE,double &nS,double &nT,datetime &nT1,datetime &nT2)
 {
-   string n=TP_+id;
-   if(ObjectFind(0,n)<0) return(false);
-   long per=PeriodSeconds();
-   nE=gToolEntry; nS=gToolSL; nT=gToolTP; nT1=gToolT1; nT2=gToolT2;
+   double pt=SymbolInfoDouble(_Symbol,SYMBOL_POINT);
+   long   per=PeriodSeconds();
+   nDir=bDir; nE=bEntry; nS=bSL; nT=bTP; nT1=bT1; nT2=bT2;
 
-   if(id=="tp")      nT=NormalizeDouble(ObjectGetDouble(0,n,OBJPROP_PRICE,0),_Digits);
-   else if(id=="sl") nS=NormalizeDouble(ObjectGetDouble(0,n,OBJPROP_PRICE,0),_Digits);
-   else if(id=="en")
+   if(id=="pt" || id=="ps" || id=="pm1" || id=="pm2")
    {
-      if(gToolLive) return(false);                         // the fill price is fixed
-      double p=NormalizeDouble(ObjectGetDouble(0,n,OBJPROP_PRICE,0),_Digits);
-      double d=p-gToolEntry;
-      nE=p; nS=NormalizeDouble(gToolSL+d,_Digits); nT=NormalizeDouble(gToolTP+d,_Digits);
+      string n=TP_+id+"t";
+      if(ObjectFind(0,n)<0) return(false);
+      int lx=(int)ObjectGetInteger(0,n,OBJPROP_XDISTANCE),ly=(int)ObjectGetInteger(0,n,OBJPROP_YDISTANCE);
+      int sub=0; datetime tt=0; double price=0;
+      if(!ChartXYToTimePrice(0,lx,ly,sub,tt,price) || price<=0.0) return(false);
+      price=NormalizeDouble(price,_Digits);
+      if(id=="pt") nT=price;
+      else if(id=="ps") nS=price;
+      else
+      {
+         if(gToolLive) return(false);                     // the fill price is fixed
+         double dd=price-bEntry;
+         nE=price; nS=NormalizeDouble(bSL+dd,_Digits); nT=NormalizeDouble(bTP+dd,_Digits);
+      }
    }
-   else if(id=="tl")
+   else if(id=="zp" || id=="zl")
    {
-      nT1=(datetime)ObjectGetInteger(0,n,OBJPROP_TIME,0);
-      if((long)nT2-(long)nT1<per*3) nT1=(datetime)((long)nT2-per*3);
-   }
-   else if(id=="tr")
-   {
-      nT2=(datetime)ObjectGetInteger(0,n,OBJPROP_TIME,0);
+      string n=TP_+id;
+      if(ObjectFind(0,n)<0) return(false);
+      double a0p=ObjectGetDouble(0,n,OBJPROP_PRICE,0),a1p=ObjectGetDouble(0,n,OBJPROP_PRICE,1);
+      long   a0t=(long)ObjectGetInteger(0,n,OBJPROP_TIME,0),a1t=(long)ObjectGetInteger(0,n,OBJPROP_TIME,1);
+      double s0p=(id=="zp")?bEntry:bSL,s1p=(id=="zp")?bTP:bEntry;
+      double dp0=a0p-s0p,dp1=a1p-s1p;
+      long   dt0=a0t-(long)bT1,dt1=a1t-(long)bT2;
+      bool m0=(MathAbs(dp0)>=pt/2.0 || MathAbs(dt0)>=per/2);
+      bool m1=(MathAbs(dp1)>=pt/2.0 || MathAbs(dt1)>=per/2);
+      if(!m0 && !m1) return(false);
+      if(m0 && m1 && MathAbs(dp0-dp1)<pt && MathAbs(dt0-dt1)<per)
+      {
+         if(gToolLive){ nS=bSL+dp0; nT=bTP+dp0; }          // bracket shifts, fill stays
+         else { nE=bEntry+dp0; nS=bSL+dp0; nT=bTP+dp0; }
+         nT1=(datetime)((long)bT1+dt0); nT2=(datetime)((long)bT2+dt0);
+      }
+      else
+      {
+         if(m0){ if(id=="zp"){ if(!gToolLive) nE=a0p; } else nS=a0p; nT1=(datetime)a0t; }
+         if(m1){ if(id=="zp") nT=a1p; else { if(!gToolLive) nE=a1p; } nT2=(datetime)a1t; }
+      }
+      nE=NormalizeDouble(nE,_Digits); nS=NormalizeDouble(nS,_Digits); nT=NormalizeDouble(nT,_Digits);
       if((long)nT2-(long)nT1<per*3) nT2=(datetime)((long)nT1+per*3);
    }
    else return(false);
+
+   //--- flip: target or stop pulled through the entry (planner only)
+   if(!gToolLive)
+   {
+      bool lng=(nDir==1);
+      double minD=MinStopDist();
+      if(lng?(nT<nE-minD):(nT>nE+minD))      { nDir=lng?2:1; nS=NormalizeDouble(2.0*nE-nS,_Digits); }
+      else if(lng?(nS>nE+minD):(nS<nE-minD)) { nDir=lng?2:1; nT=NormalizeDouble(2.0*nE-nT,_Digits); }
+   }
    return(true);
 }
 
-bool ToolValid(double e,double s,double t)
+bool ToolValid(int dir,double e,double s,double t)
 {
    double minD=MinStopDist();
-   if(gTool==1) return(t>e+minD && s<e-minD);
+   if(dir==1) return(t>e+minD && s<e-minD);
    return(t<e-minD && s>e+minD);
 }
 
@@ -2032,11 +2038,13 @@ void ToolPreview()
    if(gTool==0) return;
    string id=ToolDraggedObj();
    if(id=="") return;
-   double nE,nS,nT; datetime nT1,nT2;
-   if(!ToolDerive(id,nE,nS,nT,nT1,nT2)) return;
-   if(!ToolValid(nE,nS,nT)) return;
-   gToolEntry=nE; gToolSL=nS; gToolTP=nT; gToolT1=nT1; gToolT2=nT2;
+   int nDir; double nE,nS,nT; datetime nT1,nT2;
+   if(!ToolDerive(id,nDir,nE,nS,nT,nT1,nT2)) return;
+   if(!ToolValid(nDir,nE,nS,nT)) return;
+   bool flipped=(nDir!=gTool);
+   gTool=nDir; gToolEntry=nE; gToolSL=nS; gToolTP=nT; gToolT1=nT1; gToolT2=nT2;
    ToolDrawExcept(id);
+   if(flipped) ToolButton();
    ToolPanelRows();
    ChartRedraw();
 }
@@ -2046,18 +2054,23 @@ void ToolDragged(string name)
 {
    if(gTool==0) return;
    string id=StringSubstr(name,StringLen(TP_));
-   double nE,nS,nT; datetime nT1,nT2;
-   if(!ToolDerive(id,nE,nS,nT,nT1,nT2)){ ToolDrawAll(); ChartRedraw(); return; }
-   if(!ToolValid(nE,nS,nT))
+   if(StringLen(id)>1 && StringSubstr(id,StringLen(id)-1)=="t" && StringSubstr(id,0,1)=="p")
+      id=StringSubstr(id,0,StringLen(id)-1);            // "ptt" -> "pt": the pill text
+   int nDir; double nE,nS,nT; datetime nT1,nT2;
+   if(!ToolDerive(id,nDir,nE,nS,nT,nT1,nT2)){ ToolRestore(); ToolDrawAll(); ChartRedraw(); return; }
+   if(!ToolValid(nDir,nE,nS,nT))
    {
       SayErr("Stop and Target must stay on their side of the entry");
       ToolRestore(); ToolDrawAll(); UpdInfo(); ChartRedraw();
       return;
    }
-   gToolEntry=nE; gToolSL=nS; gToolTP=nT; gToolT1=nT1; gToolT2=nT2;
+   bool flipped=(nDir!=bDir);
+   gTool=nDir; gToolEntry=nE; gToolSL=nS; gToolTP=nT; gToolT1=nT1; gToolT2=nT2;
    if(gToolLive && (MathAbs(nS-bSL)>0 || MathAbs(nT-bTP)>0)) ToolApply();
    ToolCommit();
    ToolDrawAll();
+   ToolButton();
+   if(flipped) Say("Tool flipped to "+(gTool==1?"LONG":"SHORT"));
    UpdInfo();
    ChartRedraw();
 }
@@ -2119,6 +2132,65 @@ void ToolPanelRows()
    SetT("ttV","+"+DoubleToString(pctTP,2)+"%  "+Money(pTP));
    SetT("trV","1:"+DoubleToString(rr,2)+"  "+DoubleToString(lot,VolDigits())+" lot");
 }
+
+//==================================================================
+//   PIXEL PILLS  (shared by the TP/SL tool and the sessions)
+//   n+"b" is the filled background, n+"t" the centred text. When
+//   drag is true the text label is selectable, so the pill itself
+//   can be grabbed and pulled.
+//==================================================================
+int PillW(string text,int fs){ return((int)(StringLen(text)*0.78*fs)+16); }
+
+void PillXY(string n,int x,int y,string text,color bg,int fs,bool visible,bool drag,bool moveText=true)
+{
+   int w=PillW(text,fs),h=fs*2+2;
+   int cw=(int)ChartGetInteger(0,CHART_WIDTH_IN_PIXELS);
+   int ch=(int)ChartGetInteger(0,CHART_HEIGHT_IN_PIXELS);
+   bool vis=visible && (x+w>0 && x<cw && y+h>0 && y<ch);
+   string nb=n+"b",nt=n+"t";
+   if(ObjectFind(0,nb)<0)
+   {
+      ObjectCreate(0,nb,OBJ_RECTANGLE_LABEL,0,0,0);
+      ObjectSetInteger(0,nb,OBJPROP_CORNER,CORNER_LEFT_UPPER);
+      ObjectSetInteger(0,nb,OBJPROP_BORDER_TYPE,BORDER_FLAT);
+      ObjectSetInteger(0,nb,OBJPROP_BACK,false);
+      ObjectSetInteger(0,nb,OBJPROP_SELECTABLE,false);
+      ObjectSetInteger(0,nb,OBJPROP_HIDDEN,true);
+      ObjectSetInteger(0,nb,OBJPROP_ZORDER,4);
+   }
+   if(ObjectFind(0,nt)<0)
+   {
+      ObjectCreate(0,nt,OBJ_LABEL,0,0,0);
+      ObjectSetInteger(0,nt,OBJPROP_CORNER,CORNER_LEFT_UPPER);
+      ObjectSetInteger(0,nt,OBJPROP_ANCHOR,ANCHOR_CENTER);
+      ObjectSetString (0,nt,OBJPROP_FONT,FONT_UI);
+      ObjectSetInteger(0,nt,OBJPROP_FONTSIZE,fs);
+      ObjectSetInteger(0,nt,OBJPROP_HIDDEN,true);
+      ObjectSetInteger(0,nt,OBJPROP_ZORDER,5);
+      ObjectSetString (0,nt,OBJPROP_TOOLTIP,drag?"Drag":"");
+   }
+   ObjectSetInteger(0,nb,OBJPROP_XDISTANCE,x);
+   ObjectSetInteger(0,nb,OBJPROP_YDISTANCE,y);
+   ObjectSetInteger(0,nb,OBJPROP_XSIZE,w);
+   ObjectSetInteger(0,nb,OBJPROP_YSIZE,h);
+   ObjectSetInteger(0,nb,OBJPROP_BGCOLOR,bg);
+   ObjectSetInteger(0,nb,OBJPROP_BORDER_COLOR,bg);
+   ObjectSetInteger(0,nb,OBJPROP_TIMEFRAMES,vis?OBJ_ALL_PERIODS:OBJ_NO_PERIODS);
+
+   if(moveText)
+   {
+      ObjectSetInteger(0,nt,OBJPROP_XDISTANCE,x+w/2);
+      ObjectSetInteger(0,nt,OBJPROP_YDISTANCE,y+h/2);
+   }
+   ObjectSetInteger(0,nt,OBJPROP_COLOR,TextOn(bg));
+   ObjectSetInteger(0,nt,OBJPROP_SELECTABLE,drag);
+   ObjectSetInteger(0,nt,OBJPROP_SELECTED,drag);
+   if(ObjectGetString(0,nt,OBJPROP_TEXT)!=text) ObjectSetString(0,nt,OBJPROP_TEXT,text);
+   ObjectSetInteger(0,nt,OBJPROP_TIMEFRAMES,vis?OBJ_ALL_PERIODS:OBJ_NO_PERIODS);
+}
+
+string PillText(string n){ return(ObjectFind(0,n+"t")<0?"":ObjectGetString(0,n+"t",OBJPROP_TEXT)); }
+color  PillBg(string n)  { return(ObjectFind(0,n+"b")<0?(color)clrNONE:(color)ObjectGetInteger(0,n+"b",OBJPROP_BGCOLOR)); }
 
 //==================================================================
 //                       MONEY MANAGEMENT
