@@ -39,8 +39,9 @@ Panel position and collapsed state persist between restarts.
 ## Position tool (TradingView style)
 
 The **TP/SL** button in TOOLS cycles **off → LONG → SHORT → off** (it works like
-the SESSIONS and HOOMAN toggles). Two coloured boxes appear at the current price
-with the stepper's stop distance and R:R: a green profit box from entry to **Target**
+the SESSIONS and HOOMAN toggles). Two coloured boxes appear at the current price,
+sized from the visible chart range (about 12% of it for the stop, R:R for the
+target) so the tool opens at a normal size on any symbol or zoom: a green profit box from entry to **Target**
 and a red loss box from entry to **Stop**, with nothing else drawn over the chart. The labels are
 TradingView's filled pills, centred in the box: a green
 `Target: 1.23456 (0.85%) 170, Amount: 120.00` at the top, a red
@@ -59,6 +60,7 @@ The chart stops panning while the cursor is over the tool.
 | anywhere inside the tool, or the grey **Open P&L** pill | the whole tool moves, in price and in time |
 | the **Target** edge, or the green Target pill | Target resizes |
 | the **Stop** edge, or the red Stop pill | Stop resizes |
+| the thin **entry line** between the boxes | only the entry moves; Stop and Target stay |
 | the left or right side | the box gets wider or narrower |
 | **Target (or Stop) pulled across the entry** | the tool **flips** LONG ↔ SHORT the moment it crosses; colours swap, the other level mirrors |
 | the **FLIP** button in the top-right corner | flips LONG ↔ SHORT in place, mirroring Stop and Target around the entry |

@@ -1,13 +1,13 @@
 //+------------------------------------------------------------------+
 //|                                       CC_TradingManagement.mq5   |
-//|                        CC Trading Management  v4.70              |
+//|                        CC Trading Management  v4.80              |
 //|                                                                  |
 //|   YouTube : https://www.youtube.com/@ChartAndChill               |
 //|   This tool is FREE - forever. Please subscribe to support it.   |
 //+------------------------------------------------------------------+
 #property copyright "ChartAndChill"
 #property link      "https://www.youtube.com/@ChartAndChill"
-#property version   "4.70"
+#property version   "4.80"
 #property description "CC Trading Management - risk & execution panel with a TradingView style position tool"
 #property description "Tools: Sessions | POC + Value Area | VWAP | Hooman levels"
 #property description "YouTube: @ChartAndChill - free forever, please subscribe."
@@ -120,6 +120,7 @@ input double InpAutoAtrSL    = 1.5;      // Auto: stop loss = ATR x
 #define HIT_L    4
 #define HIT_R    5
 #define HIT_FLIP 6
+#define HIT_EN   7
 #define HIT_TOL  8
 #define TOOLS_SEC       5       // heavy chart tools refresh interval
 
@@ -819,7 +820,7 @@ int OnInit()
    if(!gTester)
    {
       Print("+--------------------------------------------------------+");
-      Print("|            CC TRADING MANAGEMENT  v4.70                |");
+      Print("|            CC TRADING MANAGEMENT  v4.80                |");
       Print("|   FREE forever - please subscribe on YouTube:          |");
       Print("|            youtube.com/@ChartAndChill                  |");
       Print("|   Drag the panel by its title bar. Drag the coloured   |");
@@ -1676,7 +1677,7 @@ void ToolPlace(int dir)
    ObjectsDeleteAll(0,TP_);
    gTool=dir; gToolLive=false; gToolTicket=0; gToolHide=false;
    double entry=(dir==1)?ask:bid;
-   double d=MathMax((double)gSLPts*pt,MinStopDist());
+   double d=ToolDefaultStop(pt);
    gToolEntry=NormalizeDouble(entry,_Digits);
    gToolSL=NormalizeDouble((dir==1)?entry-d:entry+d,_Digits);
    gToolTP=NormalizeDouble((dir==1)?entry+d*gRR:entry-d*gRR,_Digits);
@@ -1686,6 +1687,21 @@ void ToolPlace(int dir)
    ToolDrawAll();
    ToolButton();
    Say((dir==1?"LONG":"SHORT")+" tool - drag any part of it");
+}
+
+//--- a stop distance that opens the tool at a normal size on THIS chart:
+//--- a share of the visible price range, so it fits the screen on any
+//--- symbol or zoom, never below the broker's minimum
+double ToolDefaultStop(double pt)
+{
+   double top=ChartGetDouble(0,CHART_PRICE_MAX,0),bot=ChartGetDouble(0,CHART_PRICE_MIN,0);
+   double vis=top-bot;
+   double d=(vis>0.0)?vis*0.12:(double)gSLPts*pt;
+   // stop + target together should not exceed ~60% of the screen
+   double total=d*(1.0+MathMax(0.1,gRR));
+   if(vis>0.0 && total>vis*0.6) d=vis*0.6/(1.0+MathMax(0.1,gRR));
+   d=MathMax(d,MinStopDist());
+   return(NormalizeDouble(d,_Digits));
 }
 
 //--- the TOOLS toggle: OFF -> LONG -> SHORT -> OFF, or show / hide while live
@@ -1918,6 +1934,20 @@ void ToolDrawAll()
    if(gTool==0) return;
    ToolBox("zp",InpTpColor);
    ToolBox("zl",InpSlColor);
+   string n=TP_+"en";                                // the entry line: grab it to move the entry
+   if(ObjectFind(0,n)<0)
+   {
+      ObjectCreate(0,n,OBJ_TREND,0,gToolT1,gToolEntry,gToolT2,gToolEntry);
+      ObjectSetInteger(0,n,OBJPROP_RAY_RIGHT,false);
+      ObjectSetInteger(0,n,OBJPROP_BACK,false);
+      ObjectSetInteger(0,n,OBJPROP_SELECTABLE,false);
+      ObjectSetInteger(0,n,OBJPROP_HIDDEN,true);
+      ObjectSetInteger(0,n,OBJPROP_WIDTH,1);
+      ObjectSetInteger(0,n,OBJPROP_STYLE,STYLE_SOLID);
+   }
+   ObjectMove(0,n,0,gToolT1,gToolEntry);
+   ObjectMove(0,n,1,gToolT2,gToolEntry);
+   ObjectSetInteger(0,n,OBJPROP_COLOR,InpEntryColor);
    ToolLabels();
 }
 
@@ -1976,6 +2006,7 @@ int ToolHit(int mx,int my)
    if(mx<x1-HIT_TOL || mx>x2+HIT_TOL || my<top-HIT_TOL || my>bot+HIT_TOL) return(HIT_NONE);
    if(MathAbs(my-yT)<=HIT_TOL) return(HIT_TP);
    if(MathAbs(my-yS)<=HIT_TOL) return(HIT_SL);
+   if(MathAbs(my-yE)<=HIT_TOL) return(HIT_EN);
    if(MathAbs(mx-x1)<=HIT_TOL) return(HIT_L);
    if(MathAbs(mx-x2)<=HIT_TOL) return(HIT_R);
    return(HIT_MOVE);
@@ -2026,6 +2057,18 @@ void ToolDragMove(int mx,int my)
          tp=2.0*e-bTP;
       }
       s=(dir==1)?MathMin(p,e-minD):MathMax(p,e+minD);
+   }
+   else if(gDragMode==HIT_EN)
+   {
+      if(gToolLive)                                   // the fill is fixed: behave like a move
+      {
+         double dp=p-gDragP0; s=bSL+dp; tp=bTP+dp;
+      }
+      else
+      {
+         double lo=MathMin(bSL,bTP)+minD,hi=MathMax(bSL,bTP)-minD;
+         e=(lo<=hi)?MathMax(lo,MathMin(p,hi)):bEntry;
+      }
    }
    else if(gDragMode==HIT_L)
    {
