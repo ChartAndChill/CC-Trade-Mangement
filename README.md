@@ -20,7 +20,7 @@ seconds (`InpWelcomeSec = 0` turns it off).
 
 ## Panel
 
-Jade-green body with a navy header by default. Both are inputs
+Light navy body with a darker navy header by default. Both are inputs
 (`InpPanelBody`, `InpPanelHead`, `InpPanelAccent`); text colours are derived
 automatically so they stay readable on whatever colours you pick.
 
@@ -38,20 +38,34 @@ Panel position and collapsed state persist between restarts.
 
 ## Position tool (TradingView style)
 
-Press **LONG** or **SHORT**. Three lines appear on the chart at the current price
-with the stepper's stop distance and R:R: a dashed entry line, a red **STOP**
-line with a red loss zone, and a green **TARGET** line with a green profit zone.
-Each line carries a label: price · % move · money at the computed lot · points,
-and the entry label shows direction, lot and R:R.
+Press **LONG** or **SHORT**. Two coloured boxes appear at the current price with
+the stepper's stop distance and R:R: a green profit box from entry to **Target**
+and a red loss box from entry to **Stop**, with crisp edge lines and a dashed
+entry line. Labels inside the boxes read like TradingView's:
+`Target 1.23456 (+0.85%) 170 pts Amount +120.00 USD`,
+`Stop 1.23400 (-0.42%) 85 pts Amount -60.00 USD`, and on the entry
+`LONG 0.50 lot @ 1.23456 Risk/Reward 2.00` (plus live P/L once attached).
 
-- **Drag** any line. Stop and Target move on their own; dragging the entry moves
-  the whole tool. A level cannot be dragged to the wrong side of the entry. The
-  zones follow the mouse while you drag.
+The boxes are the handles — every part can be moved or resized:
+
+| Grab | Effect |
+|---|---|
+| a box (its body) | the whole tool moves |
+| the outer corner of the green box | Target resizes |
+| the outer corner of the red box | Stop resizes |
+| the entry corner of either box | Entry moves (planner only) |
+| any corner sideways | the box reaches further or shorter in time |
+
+Lines and labels follow the mouse while you drag. A Stop or Target cannot be
+dropped on the wrong side of the entry — the box snaps back. The box is kept
+ahead of the current bar automatically.
+
 - **BUY / SELL** use the tool's levels and its lot (or the typed lot). **BUY LMT
   / SELL LMT** use the tool's entry as the limit price.
 - The moment a position with the panel's magic number exists, the tool
-  **attaches to it**: entry becomes the real fill, and dragging Stop / Target
-  **modifies the real position**. If the position is changed elsewhere the lines
+  **attaches to it**: entry becomes the real fill (and stays fixed), and moving
+  Stop / Target — by corner or by dragging the whole box — **modifies the real
+  position**. If the position is changed elsewhere the lines
   follow. When it closes the tool clears itself.
 - The panel's Stop / Target rows show the same −% / +% and money, in red and
   green.
@@ -147,14 +161,17 @@ is built only in visual mode, so validation stays fast.
 
 ## راهنمای کوتاه (فارسی)
 
-- **پنل** سبز یشمی با هدر سرمه‌ای؛ رنگ‌ها از ورودی‌های `InpPanelBody` و
+- **پنل** آبی سرمه‌ای کم‌رنگ با هدر سرمه‌ای؛ رنگ‌ها از ورودی‌های `InpPanelBody` و
   `InpPanelHead` قابل تغییرند و رنگ نوشته‌ها خودکار طوری انتخاب می‌شود که خوانا بماند.
   نوار عنوان را بگیرید و بکشید تا پنل جابه‌جا شود.
-- **ابزار پوزیشن (مدل تریدینگ‌ویو):** دکمه LONG یا SHORT را بزنید؛ خط ورود، خط
-  قرمز حد ضرر با ناحیه‌ی قرمز و خط سبز حد سود با ناحیه‌ی سبز روی چارت می‌آید، هر
-  کدام با قیمت، درصد، مبلغ و پوینت. خطوط را با ماوس بکشید (ناحیه‌ها همراهش حرکت
-  می‌کنند). BUY/SELL از همین سطوح استفاده می‌کند. وقتی پوزیشن باز شد، ابزار به
-  پوزیشن واقعی می‌چسبد و کشیدن خط SL/TP همان پوزیشن را تغییر می‌دهد.
+- **ابزار پوزیشن (مدل تریدینگ‌ویو):** دکمه LONG یا SHORT را بزنید؛ باکس سبز سود
+  (ورود تا تارگت) و باکس قرمز ضرر (ورود تا استاپ) با برچسب قیمت/درصد/پوینت/مبلغ
+  روی چارت می‌آید. خودِ باکس‌ها دستگیره‌اند: بدنه‌ی باکس را بکشید کل ابزار جابه‌جا
+  می‌شود؛ گوشه‌ی بیرونی باکس سبز = تغییر سایز تارگت، گوشه‌ی بیرونی باکس قرمز =
+  تغییر سایز استاپ، گوشه‌ی سمت ورود = جابه‌جایی ورود، و کشیدن گوشه به چپ/راست =
+  تغییر طول باکس. خط‌ها و برچسب‌ها همزمان با ماوس حرکت می‌کنند. BUY/SELL از همین
+  سطوح استفاده می‌کند؛ وقتی پوزیشن باز شد، ابزار به پوزیشن واقعی می‌چسبد و جابه‌جایی
+  استاپ/تارگت همان پوزیشن را تغییر می‌دهد.
 - **ابزار هومن:** سقف و کف دیروز (زرد)، ۵۰٪ (سبز)، ۲۵/۷۵٪ (زرد خط‌چین) و
   ۱۲.۵/۳۷.۵/۶۲.۵/۸۷.۵٪ (سفید خط‌چین)، از دیروز تا امروز امتداد دارند؛ هر خط را
   بکشید کل نردبان یک‌جا جابه‌جا می‌شود، HM RESET برمی‌گرداند.
