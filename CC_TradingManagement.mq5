@@ -1,13 +1,13 @@
 //+------------------------------------------------------------------+
 //|                                       CC_TradingManagement.mq5   |
-//|                        CC Trading Management  v4.60              |
+//|                        CC Trading Management  v4.70              |
 //|                                                                  |
 //|   YouTube : https://www.youtube.com/@ChartAndChill               |
 //|   This tool is FREE - forever. Please subscribe to support it.   |
 //+------------------------------------------------------------------+
 #property copyright "ChartAndChill"
 #property link      "https://www.youtube.com/@ChartAndChill"
-#property version   "4.60"
+#property version   "4.70"
 #property description "CC Trading Management - risk & execution panel with a TradingView style position tool"
 #property description "Tools: Sessions | POC + Value Area | VWAP | Hooman levels"
 #property description "YouTube: @ChartAndChill - free forever, please subscribe."
@@ -112,6 +112,15 @@ input double InpAutoAtrSL    = 1.5;      // Auto: stop loss = ATR x
 #define TESTER_EQ_FLOOR 0.5     // tester strategy halts below this x start equity
 #define TESTER_RISK_PCT 0.5     // risk per trade inside the tester
 #define GUI_MS          300     // minimum interval between panel repaints
+//--- TP/SL tool mouse hit zones
+#define HIT_NONE 0
+#define HIT_MOVE 1
+#define HIT_TP   2
+#define HIT_SL   3
+#define HIT_L    4
+#define HIT_R    5
+#define HIT_FLIP 6
+#define HIT_TOL  8
 #define TOOLS_SEC       5       // heavy chart tools refresh interval
 
 CTrade m_trade;
@@ -168,6 +177,8 @@ int      gDragMode=0;               // tool drag in progress (HIT_*)
 double   gDragP0=0;                 // price under the cursor when it started
 datetime gDragT0=0;
 bool     gLmbPrev=false,gOverTool=false;
+int      gHitX[5],gHitY[5],gHitW[5],gHitH[5];   // pill rectangles: target, stop, pnl1, pnl2, flip
+bool     gHitOn[5];
 double   gToolPosSL=0,gToolPosTP=0;   // last values seen on the position
 
 //--- misc
@@ -808,7 +819,7 @@ int OnInit()
    if(!gTester)
    {
       Print("+--------------------------------------------------------+");
-      Print("|            CC TRADING MANAGEMENT  v4.60                |");
+      Print("|            CC TRADING MANAGEMENT  v4.70                |");
       Print("|   FREE forever - please subscribe on YouTube:          |");
       Print("|            youtube.com/@ChartAndChill                  |");
       Print("|   Drag the panel by its title bar. Drag the coloured   |");
@@ -928,6 +939,7 @@ void OnChartEvent(const int id,const long &lparam,const double &dparam,const str
             return;
          }
          int hit=ToolHit(mx,my);
+         if(hit==HIT_FLIP){ ToolFlip(); return; }
          if(hit!=0){ ToolDragStart(hit,mx,my); return; }
       }
       // hovering over the tool: keep the chart from panning under it
@@ -1682,7 +1694,7 @@ void ToolCycle()
    if(gToolLive || ToolHasPosition())
    {
       gToolHide=!gToolHide;
-      if(gToolHide){ ObjectsDeleteAll(0,TP_); gToolLive=false; gToolTicket=0; gTool=0; Say("TP/SL overlay hidden"); }
+      if(gToolHide){ ObjectsDeleteAll(0,TP_); for(int k=0;k<5;k++) gHitOn[k]=false; gToolLive=false; gToolTicket=0; gTool=0; Say("TP/SL overlay hidden"); }
       else         { ToolSync(); Say("TP/SL overlay shown"); }
       ToolButton();
       return;
@@ -1714,6 +1726,7 @@ void ToolRestore() { gToolEntry=bEntry; gToolSL=bSL; gToolTP=bTP; gToolT1=bT1; g
 
 void ToolClear()
 {
+   for(int k=0;k<5;k++) gHitOn[k]=false;
    gTool=0; gToolLive=false; gToolTicket=0;
    gToolEntry=0; gToolSL=0; gToolTP=0; gToolPosSL=0; gToolPosTP=0;
    ObjectsDeleteAll(0,TP_);
@@ -1860,10 +1873,43 @@ void ToolLabels()
    ok=ChartTimePriceToXY(0,0,gToolT1,gToolSL,d,yS) && ok;
    int xc=(x1+x2)/2;
 
-   PillXY(TP_+"pt" ,xc-PillW(sTP,8)/2,lng?yT+3:yT-21,sTP,InpTpColor,8,ok,false);
-   PillXY(TP_+"ps" ,xc-PillW(sSL,8)/2,lng?yS-21:yS+3,sSL,InpSlColor,8,ok,false);
-   PillXY(TP_+"pm1",xc-PillW(sM1,8)/2,yE-19,sM1,C'110,114,126',8,ok,false);
-   PillXY(TP_+"pm2",xc-PillW(sM2,8)/2,yE+1 ,sM2,C'110,114,126',8,ok,false);
+   ToolPillAt(0,"pt" ,xc-PillW(sTP,8)/2,lng?yT+3:yT-21,sTP,InpTpColor,ok);
+   ToolPillAt(1,"ps" ,xc-PillW(sSL,8)/2,lng?yS-21:yS+3,sSL,InpSlColor,ok);
+   ToolPillAt(2,"pm1",xc-PillW(sM1,8)/2,yE-19,sM1,C'110,114,126',ok);
+   ToolPillAt(3,"pm2",xc-PillW(sM2,8)/2,yE+1 ,sM2,C'110,114,126',ok);
+
+   // FLIP button in the top-right corner (planner only: a live position has a direction)
+   if(!gToolLive)
+   {
+      int top=MathMin(yT,yS);
+      ToolPillAt(4,"pf",x2-PillW("FLIP",8)-4,top+4,"FLIP",C'80,84,96',ok);
+   }
+   else
+   {
+      ObjectDelete(0,TP_+"pfb"); ObjectDelete(0,TP_+"pft"); gHitOn[4]=false;
+   }
+}
+
+//--- place a pill and remember its rectangle for the mouse hit test
+void ToolPillAt(int k,string id,int x,int y,string text,color bg,bool visible)
+{
+   PillXY(TP_+id,x,y,text,bg,8,visible,false);
+   gHitX[k]=x; gHitY[k]=y; gHitW[k]=PillW(text,8); gHitH[k]=8*2+2; gHitOn[k]=visible;
+}
+
+//--- mirror the tool around its entry: LONG <-> SHORT
+void ToolFlip()
+{
+   if(gTool==0 || gToolLive) return;
+   double e=gToolEntry;
+   double s=NormalizeDouble(2.0*e-gToolSL,_Digits),t=NormalizeDouble(2.0*e-gToolTP,_Digits);
+   gToolSL=s; gToolTP=t; gTool=(gTool==1)?2:1;
+   ToolCommit();
+   ToolDrawAll();
+   ToolButton();
+   ToolPanelRows();
+   Say("Tool flipped to "+(gTool==1?"LONG":"SHORT"));
+   ChartRedraw();
 }
 
 //--- everything from the current state
@@ -1909,19 +1955,17 @@ double ToolLot()
 //   Everything is recomputed from the committed state and the cursor
 //   on every mouse move, so the tool sticks to the mouse.
 //==================================================================
-#define HIT_NONE 0
-#define HIT_MOVE 1
-#define HIT_TP   2
-#define HIT_SL   3
-#define HIT_L    4
-#define HIT_R    5
-#define HIT_TOL  8
-
 int ToolHit(int mx,int my)
 {
    if(gTool==0) return(HIT_NONE);
    // the panel wins over anything under it
    if(mx>=gPX && mx<=gPX+PW && my>=gPY && my<=gPY+PanelHeight()) return(HIT_NONE);
+
+   // the pills are grab zones too: FLIP button, Target pill, Stop pill, P&L pills
+   int pillHit[5]={HIT_TP,HIT_SL,HIT_MOVE,HIT_MOVE,HIT_FLIP};
+   for(int k=4;k>=0;k--)
+      if(gHitOn[k] && mx>=gHitX[k] && mx<=gHitX[k]+gHitW[k] && my>=gHitY[k] && my<=gHitY[k]+gHitH[k])
+         return(pillHit[k]);
 
    int x1=0,x2=0,yE=0,yT=0,yS=0,d=0;
    if(!ChartTimePriceToXY(0,0,gToolT1,gToolEntry,x1,yE)) return(HIT_NONE);

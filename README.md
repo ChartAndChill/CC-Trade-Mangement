@@ -56,11 +56,12 @@ The chart stops panning while the cursor is over the tool.
 
 | Grab | Effect |
 |---|---|
-| anywhere inside the tool — box, pill, text | the whole tool moves, in price and in time |
-| the **Target** edge (top of the green box) | Target resizes |
-| the **Stop** edge (bottom of the red box) | Stop resizes |
+| anywhere inside the tool, or the grey **Open P&L** pill | the whole tool moves, in price and in time |
+| the **Target** edge, or the green Target pill | Target resizes |
+| the **Stop** edge, or the red Stop pill | Stop resizes |
 | the left or right side | the box gets wider or narrower |
 | **Target (or Stop) pulled across the entry** | the tool **flips** LONG ↔ SHORT the moment it crosses; colours swap, the other level mirrors |
+| the **FLIP** button in the top-right corner | flips LONG ↔ SHORT in place, mirroring Stop and Target around the entry |
 
 A level can never be closer to the entry than the broker's minimum stop
 distance — it is clamped, not rejected. The box is kept ahead of the current
