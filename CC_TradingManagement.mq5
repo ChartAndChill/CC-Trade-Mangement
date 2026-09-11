@@ -1,13 +1,13 @@
 //+------------------------------------------------------------------+
 //|                                       CC_TradingManagement.mq5   |
-//|                        CC Trading Management  v4.50              |
+//|                        CC Trading Management  v4.60              |
 //|                                                                  |
 //|   YouTube : https://www.youtube.com/@ChartAndChill               |
 //|   This tool is FREE - forever. Please subscribe to support it.   |
 //+------------------------------------------------------------------+
 #property copyright "ChartAndChill"
 #property link      "https://www.youtube.com/@ChartAndChill"
-#property version   "4.50"
+#property version   "4.60"
 #property description "CC Trading Management - risk & execution panel with a TradingView style position tool"
 #property description "Tools: Sessions | POC + Value Area | VWAP | Hooman levels"
 #property description "YouTube: @ChartAndChill - free forever, please subscribe."
@@ -30,9 +30,9 @@ input int    InpTrailStep    = 50;       // Trailing distance (points)
 
 input group "===== Tools on start ====="
 input bool   InpSessOn       = true;     // Session boxes
-input bool   InpPocOn        = true;     // POC / Volume profile
-input bool   InpVwapOn       = true;     // VWAP
-input bool   InpHoomanOn     = true;     // Hooman levels
+input bool   InpPocOn        = false;    // POC / Volume profile
+input bool   InpVwapOn       = false;    // VWAP
+input bool   InpHoomanOn     = false;    // Hooman levels
 input bool   InpToolOn       = false;    // TP/SL tool (long) on start
 
 input group "===== Tool settings ====="
@@ -164,7 +164,10 @@ bool     gToolHide=false;           // overlay hidden while a position is open
 double   bEntry=0,bSL=0,bTP=0;      // committed state (before the current drag)
 datetime bT1=0,bT2=0;
 int      bDir=0;
-int      gPillX[4],gPillY[4];       // where the tool pills were placed
+int      gDragMode=0;               // tool drag in progress (HIT_*)
+double   gDragP0=0;                 // price under the cursor when it started
+datetime gDragT0=0;
+bool     gLmbPrev=false,gOverTool=false;
 double   gToolPosSL=0,gToolPosTP=0;   // last values seen on the position
 
 //--- misc
@@ -805,7 +808,7 @@ int OnInit()
    if(!gTester)
    {
       Print("+--------------------------------------------------------+");
-      Print("|            CC TRADING MANAGEMENT  v4.50                |");
+      Print("|            CC TRADING MANAGEMENT  v4.60                |");
       Print("|   FREE forever - please subscribe on YouTube:          |");
       Print("|            youtube.com/@ChartAndChill                  |");
       Print("|   Drag the panel by its title bar. Drag the coloured   |");
@@ -894,52 +897,58 @@ void OnTick()
 //==================================================================
 void OnChartEvent(const int id,const long &lparam,const double &dparam,const string &sparam)
 {
-   //--- mouse: panel drag + live zone preview while a tool line is dragged
+   //--- mouse: the panel header drag and the TP/SL tool drag are both
+   //--- driven from here, so nothing depends on MT5 selecting objects
    if(id==CHARTEVENT_MOUSE_MOVE)
    {
       int mx=(int)lparam,my=(int)dparam;
       int state=(int)StringToInteger(sparam);
       bool lmb=((state&1)!=0);
-      if(lmb)
+      bool press=(lmb && !gLmbPrev),release=(!lmb && gLmbPrev);
+      gLmbPrev=lmb;
+
+      if(gDrag)                                   // panel being moved
       {
-         if(!gDrag)
-         {
-            if(InHeader(mx,my))
-            {
-               gDrag=true; gDragDX=mx-gPX; gDragDY=my-gPY;
-               ChartSetInteger(0,CHART_MOUSE_SCROLL,false);
-            }
-            else if(gTool!=0) ToolPreview();
-         }
-         else
-         {
-            gPX=mx-gDragDX; gPY=my-gDragDY;
-            ClampPos(); ApplyPos(); ChartRedraw();
-         }
+         if(lmb){ gPX=mx-gDragDX; gPY=my-gDragDY; ClampPos(); ApplyPos(); ChartRedraw(); }
+         else   { gDrag=false; ChartSetInteger(0,CHART_MOUSE_SCROLL,true); SavePos(); }
+         return;
       }
-      else if(gDrag)
+      if(gDragMode!=0)                            // tool being dragged
       {
-         gDrag=false;
-         ChartSetInteger(0,CHART_MOUSE_SCROLL,true);
-         SavePos();
+         if(lmb) ToolDragMove(mx,my);
+         else    ToolDragEnd();
+         return;
       }
+      if(press)
+      {
+         if(InHeader(mx,my))
+         {
+            gDrag=true; gDragDX=mx-gPX; gDragDY=my-gPY;
+            ChartSetInteger(0,CHART_MOUSE_SCROLL,false);
+            return;
+         }
+         int hit=ToolHit(mx,my);
+         if(hit!=0){ ToolDragStart(hit,mx,my); return; }
+      }
+      // hovering over the tool: keep the chart from panning under it
+      bool over=(!lmb && ToolHit(mx,my)!=0);
+      if(over!=gOverTool){ gOverTool=over; ChartSetInteger(0,CHART_MOUSE_SCROLL,!over); }
       return;
    }
 
    if(id==CHARTEVENT_CHART_CHANGE)
    {
       ClampPos(); ApplyPos();
-      if(gTool!=0) ToolLabels("");        // pixel pills follow scroll / zoom
+      if(gTool!=0) ToolLabels();          // pixel pills follow scroll / zoom
       if(gSess)    SessPills();
       ChartRedraw();
       return;
    }
 
-   //--- a chart line was dragged and released
+   //--- a Hooman line was dragged and released
    if(id==CHARTEVENT_OBJECT_DRAG)
    {
-      if(StringFind(sparam,TP_)==0){ ToolDragged(sparam); return; }
-      if(StringFind(sparam,HP)==0) { HoomanDragged(sparam); return; }
+      if(StringFind(sparam,HP)==0) HoomanDragged(sparam);
       return;
    }
 
@@ -1798,7 +1807,7 @@ void ToolBoxCorners(string id,datetime &t1,double &p1,datetime &t2,double &p2)
    else        { p1=gToolSL;    p2=gToolEntry; }   // corner 0 = stop,  corner 1 = entry
 }
 
-//--- a draggable, filled, translucent box
+//--- filled, translucent box (never selectable: the mouse is handled here)
 void ToolBox(string id,color c)
 {
    string n=TP_+id;
@@ -1809,20 +1818,16 @@ void ToolBox(string id,color c)
       ObjectCreate(0,n,OBJ_RECTANGLE,0,t1,p1,t2,p2);
       ObjectSetInteger(0,n,OBJPROP_FILL,true);
       ObjectSetInteger(0,n,OBJPROP_BACK,true);
-      ObjectSetInteger(0,n,OBJPROP_SELECTABLE,true);
+      ObjectSetInteger(0,n,OBJPROP_SELECTABLE,false);
       ObjectSetInteger(0,n,OBJPROP_HIDDEN,true);
-      ObjectSetString (0,n,OBJPROP_TOOLTIP,"Drag: move the tool  |  corner: resize");
    }
    ObjectMove(0,n,0,t1,p1);
    ObjectMove(0,n,1,t2,p2);
-   ObjectSetInteger(0,n,OBJPROP_SELECTED,true);           // always armed
    ObjectSetInteger(0,n,OBJPROP_COLOR,Translucent(c,InpToolOpacity));
 }
 
-//--- TradingView style pills centred in the box (every pill is a handle),
-//--- and the dashed line from the entry point to the current price.
-//--- skip = the pill being dragged right now: it is not re-placed.
-void ToolLabels(string skip)
+//--- TradingView style pills centred in the box
+void ToolLabels()
 {
    if(gTool==0) return;
    bool lng=(gTool==1);
@@ -1855,64 +1860,25 @@ void ToolLabels(string skip)
    ok=ChartTimePriceToXY(0,0,gToolT1,gToolSL,d,yS) && ok;
    int xc=(x1+x2)/2;
 
-   ToolPill(0,"pt" ,xc,lng?yT+3:yT-21,sTP,InpTpColor,ok,skip);
-   ToolPill(1,"ps" ,xc,lng?yS-21:yS+3,sSL,InpSlColor,ok,skip);
-   ToolPill(2,"pm1",xc,yE-19,sM1,C'110,114,126',ok,skip);
-   ToolPill(3,"pm2",xc,yE+1 ,sM2,C'110,114,126',ok,skip);
-
-   datetime tNow=iTime(_Symbol,PERIOD_CURRENT,0);
-   string n=TP_+"pnl";
-   if(cur>0.0 && tNow>0)
-   {
-      if(ObjectFind(0,n)<0)
-      {
-         ObjectCreate(0,n,OBJ_TREND,0,gToolT1,gToolEntry,tNow,cur);
-         ObjectSetInteger(0,n,OBJPROP_RAY_RIGHT,false);
-         ObjectSetInteger(0,n,OBJPROP_STYLE,STYLE_DASH);
-         ObjectSetInteger(0,n,OBJPROP_WIDTH,1);
-         ObjectSetInteger(0,n,OBJPROP_COLOR,C'150,155,170');
-         ObjectSetInteger(0,n,OBJPROP_BACK,false);
-         ObjectSetInteger(0,n,OBJPROP_SELECTABLE,false);
-         ObjectSetInteger(0,n,OBJPROP_HIDDEN,true);
-      }
-      ObjectMove(0,n,0,gToolT1,gToolEntry);
-      ObjectMove(0,n,1,tNow,cur);
-   }
-}
-
-//--- one tool pill: xc,y is the top-centre; remembers where it was put
-void ToolPill(int k,string id,int xc,int y,string text,color bg,bool visible,string skip)
-{
-   int w=PillW(text,8);
-   int cx=xc,cy=y+(8*2+2)/2;
-   if(id==skip)
-   {
-      // being dragged: the background follows the text, the text is not touched
-      string nt=TP_+id+"t";
-      int lx=(int)ObjectGetInteger(0,nt,OBJPROP_XDISTANCE),ly=(int)ObjectGetInteger(0,nt,OBJPROP_YDISTANCE);
-      PillXY(TP_+id,lx-w/2,ly-(8*2+2)/2,text,bg,8,visible,true,false);
-      return;
-   }
-   PillXY(TP_+id,xc-w/2,y,text,bg,8,visible,true);
-   gPillX[k]=cx; gPillY[k]=cy;
+   PillXY(TP_+"pt" ,xc-PillW(sTP,8)/2,lng?yT+3:yT-21,sTP,InpTpColor,8,ok,false);
+   PillXY(TP_+"ps" ,xc-PillW(sSL,8)/2,lng?yS-21:yS+3,sSL,InpSlColor,8,ok,false);
+   PillXY(TP_+"pm1",xc-PillW(sM1,8)/2,yE-19,sM1,C'110,114,126',8,ok,false);
+   PillXY(TP_+"pm2",xc-PillW(sM2,8)/2,yE+1 ,sM2,C'110,114,126',8,ok,false);
 }
 
 //--- everything from the current state
-void ToolDrawAll(){ ToolDrawExcept(""); }
-
-//--- everything except the object under the mouse
-void ToolDrawExcept(string skip)
+void ToolDrawAll()
 {
    if(gTool==0) return;
-   if(skip!="zp") ToolBox("zp",InpTpColor);
-   if(skip!="zl") ToolBox("zl",InpSlColor);
-   ToolLabels(skip);
+   ToolBox("zp",InpTpColor);
+   ToolBox("zl",InpSlColor);
+   ToolLabels();
 }
 
 //--- periodic upkeep: labels (live P/L) and keep the box ahead of price
 void ToolRefresh()
 {
-   if(gTool==0) return;
+   if(gTool==0 || gDragMode!=0) return;
    if(bT2<BarsAhead(3))
    {
       bT2=BarsAhead((int)MathMax(5,InpToolBars));
@@ -1920,7 +1886,7 @@ void ToolRefresh()
       ToolDrawAll();
       return;
    }
-   ToolLabels("");
+   ToolLabels();
 }
 
 double ToolLot()
@@ -1932,141 +1898,124 @@ double ToolLot()
    return(LotByRisk((gTool==1)?ORDER_TYPE_BUY:ORDER_TYPE_SELL,gToolEntry,gToolSL,rm));
 }
 
-//--- which handle no longer sits where the state put it = being dragged
-string ToolDraggedObj()
+//==================================================================
+//   MOUSE DRAGGING OF THE TOOL
+//   Hit zones in pixels: the Target edge, the Stop edge, the left and
+//   right sides, and everything inside (boxes and pills alike).
+//     move   - grab anywhere inside          -> whole tool, in price and time
+//     target - grab the target edge          -> target; across the entry = flip
+//     stop   - grab the stop edge            -> stop;   across the entry = flip
+//     side   - grab the left / right side    -> width
+//   Everything is recomputed from the committed state and the cursor
+//   on every mouse move, so the tool sticks to the mouse.
+//==================================================================
+#define HIT_NONE 0
+#define HIT_MOVE 1
+#define HIT_TP   2
+#define HIT_SL   3
+#define HIT_L    4
+#define HIT_R    5
+#define HIT_TOL  8
+
+int ToolHit(int mx,int my)
 {
-   string pills[4]={"pt","ps","pm1","pm2"};
-   for(int k=0;k<4;k++)
-   {
-      string n=TP_+pills[k]+"t";
-      if(ObjectFind(0,n)<0) continue;
-      int lx=(int)ObjectGetInteger(0,n,OBJPROP_XDISTANCE),ly=(int)ObjectGetInteger(0,n,OBJPROP_YDISTANCE);
-      if(MathAbs(lx-gPillX[k])>=3 || MathAbs(ly-gPillY[k])>=3) return(pills[k]);
-   }
-   double pt=SymbolInfoDouble(_Symbol,SYMBOL_POINT);
-   long per=PeriodSeconds();
-   string boxes[2]={"zp","zl"};
-   for(int k=0;k<2;k++)
-   {
-      string n=TP_+boxes[k];
-      if(ObjectFind(0,n)<0) continue;
-      datetime t1,t2; double p1,p2;
-      ToolBoxCorners(boxes[k],t1,p1,t2,p2);
-      if(MathAbs(ObjectGetDouble(0,n,OBJPROP_PRICE,0)-p1)>=pt/2.0) return(boxes[k]);
-      if(MathAbs(ObjectGetDouble(0,n,OBJPROP_PRICE,1)-p2)>=pt/2.0) return(boxes[k]);
-      if(MathAbs((long)ObjectGetInteger(0,n,OBJPROP_TIME,0)-(long)t1)>=per/2) return(boxes[k]);
-      if(MathAbs((long)ObjectGetInteger(0,n,OBJPROP_TIME,1)-(long)t2)>=per/2) return(boxes[k]);
-   }
-   return("");
+   if(gTool==0) return(HIT_NONE);
+   // the panel wins over anything under it
+   if(mx>=gPX && mx<=gPX+PW && my>=gPY && my<=gPY+PanelHeight()) return(HIT_NONE);
+
+   int x1=0,x2=0,yE=0,yT=0,yS=0,d=0;
+   if(!ChartTimePriceToXY(0,0,gToolT1,gToolEntry,x1,yE)) return(HIT_NONE);
+   if(!ChartTimePriceToXY(0,0,gToolT2,gToolEntry,x2,d))  return(HIT_NONE);
+   if(!ChartTimePriceToXY(0,0,gToolT1,gToolTP,d,yT))     return(HIT_NONE);
+   if(!ChartTimePriceToXY(0,0,gToolT1,gToolSL,d,yS))     return(HIT_NONE);
+   int top=MathMin(yT,yS),bot=MathMax(yT,yS);
+   if(mx<x1-HIT_TOL || mx>x2+HIT_TOL || my<top-HIT_TOL || my>bot+HIT_TOL) return(HIT_NONE);
+   if(MathAbs(my-yT)<=HIT_TOL) return(HIT_TP);
+   if(MathAbs(my-yS)<=HIT_TOL) return(HIT_SL);
+   if(MathAbs(mx-x1)<=HIT_TOL) return(HIT_L);
+   if(MathAbs(mx-x2)<=HIT_TOL) return(HIT_R);
+   return(HIT_MOVE);
 }
 
-//--- read one handle and work out the tool it describes, relative to
-//--- the committed state; a target or stop pulled across the entry
-//--- flips the tool and mirrors the other level
-bool ToolDerive(string id,int &nDir,double &nE,double &nS,double &nT,datetime &nT1,datetime &nT2)
+void ToolDragStart(int hit,int mx,int my)
 {
-   double pt=SymbolInfoDouble(_Symbol,SYMBOL_POINT);
-   long   per=PeriodSeconds();
-   nDir=bDir; nE=bEntry; nS=bSL; nT=bTP; nT1=bT1; nT2=bT2;
-
-   if(id=="pt" || id=="ps" || id=="pm1" || id=="pm2")
-   {
-      string n=TP_+id+"t";
-      if(ObjectFind(0,n)<0) return(false);
-      int lx=(int)ObjectGetInteger(0,n,OBJPROP_XDISTANCE),ly=(int)ObjectGetInteger(0,n,OBJPROP_YDISTANCE);
-      int sub=0; datetime tt=0; double price=0;
-      if(!ChartXYToTimePrice(0,lx,ly,sub,tt,price) || price<=0.0) return(false);
-      price=NormalizeDouble(price,_Digits);
-      if(id=="pt") nT=price;
-      else if(id=="ps") nS=price;
-      else
-      {
-         if(gToolLive) return(false);                     // the fill price is fixed
-         double dd=price-bEntry;
-         nE=price; nS=NormalizeDouble(bSL+dd,_Digits); nT=NormalizeDouble(bTP+dd,_Digits);
-      }
-   }
-   else if(id=="zp" || id=="zl")
-   {
-      string n=TP_+id;
-      if(ObjectFind(0,n)<0) return(false);
-      double a0p=ObjectGetDouble(0,n,OBJPROP_PRICE,0),a1p=ObjectGetDouble(0,n,OBJPROP_PRICE,1);
-      long   a0t=(long)ObjectGetInteger(0,n,OBJPROP_TIME,0),a1t=(long)ObjectGetInteger(0,n,OBJPROP_TIME,1);
-      double s0p=(id=="zp")?bEntry:bSL,s1p=(id=="zp")?bTP:bEntry;
-      double dp0=a0p-s0p,dp1=a1p-s1p;
-      long   dt0=a0t-(long)bT1,dt1=a1t-(long)bT2;
-      bool m0=(MathAbs(dp0)>=pt/2.0 || MathAbs(dt0)>=per/2);
-      bool m1=(MathAbs(dp1)>=pt/2.0 || MathAbs(dt1)>=per/2);
-      if(!m0 && !m1) return(false);
-      if(m0 && m1 && MathAbs(dp0-dp1)<pt && MathAbs(dt0-dt1)<per)
-      {
-         if(gToolLive){ nS=bSL+dp0; nT=bTP+dp0; }          // bracket shifts, fill stays
-         else { nE=bEntry+dp0; nS=bSL+dp0; nT=bTP+dp0; }
-         nT1=(datetime)((long)bT1+dt0); nT2=(datetime)((long)bT2+dt0);
-      }
-      else
-      {
-         if(m0){ if(id=="zp"){ if(!gToolLive) nE=a0p; } else nS=a0p; nT1=(datetime)a0t; }
-         if(m1){ if(id=="zp") nT=a1p; else { if(!gToolLive) nE=a1p; } nT2=(datetime)a1t; }
-      }
-      nE=NormalizeDouble(nE,_Digits); nS=NormalizeDouble(nS,_Digits); nT=NormalizeDouble(nT,_Digits);
-      if((long)nT2-(long)nT1<per*3) nT2=(datetime)((long)nT1+per*3);
-   }
-   else return(false);
-
-   //--- flip: target or stop pulled through the entry (planner only)
-   if(!gToolLive)
-   {
-      bool lng=(nDir==1);
-      double minD=MinStopDist();
-      if(lng?(nT<nE-minD):(nT>nE+minD))      { nDir=lng?2:1; nS=NormalizeDouble(2.0*nE-nS,_Digits); }
-      else if(lng?(nS>nE+minD):(nS<nE-minD)) { nDir=lng?2:1; nT=NormalizeDouble(2.0*nE-nT,_Digits); }
-   }
-   return(true);
+   int sub=0; datetime t=0; double p=0;
+   if(!ChartXYToTimePrice(0,mx,my,sub,t,p)) return;
+   gDragMode=hit; gDragP0=p; gDragT0=t;
+   ToolCommit();                                    // the state the drag is measured from
+   ChartSetInteger(0,CHART_MOUSE_SCROLL,false);
 }
 
-bool ToolValid(int dir,double e,double s,double t)
+void ToolDragMove(int mx,int my)
 {
+   int sub=0; datetime t=0; double p=0;
+   if(!ChartXYToTimePrice(0,mx,my,sub,t,p)) return;
    double minD=MinStopDist();
-   if(dir==1) return(t>e+minD && s<e-minD);
-   return(t<e-minD && s>e+minD);
-}
+   long per=PeriodSeconds();
+   bool lng=(bDir==1);
 
-//--- live follow while the mouse is still down on a handle
-void ToolPreview()
-{
-   if(gTool==0) return;
-   string id=ToolDraggedObj();
-   if(id=="") return;
-   int nDir; double nE,nS,nT; datetime nT1,nT2;
-   if(!ToolDerive(id,nDir,nE,nS,nT,nT1,nT2)) return;
-   if(!ToolValid(nDir,nE,nS,nT)) return;
-   bool flipped=(nDir!=gTool);
-   gTool=nDir; gToolEntry=nE; gToolSL=nS; gToolTP=nT; gToolT1=nT1; gToolT2=nT2;
-   ToolDrawExcept(id);
-   if(flipped) ToolButton();
+   int dir=bDir; double e=bEntry,s=bSL,tp=bTP; datetime t1=bT1,t2=bT2;
+
+   if(gDragMode==HIT_MOVE)
+   {
+      double dp=p-gDragP0; long dt=(long)t-(long)gDragT0;
+      if(gToolLive){ s=bSL+dp; tp=bTP+dp; }         // the fill is fixed: the bracket shifts
+      else { e=bEntry+dp; s=bSL+dp; tp=bTP+dp; }
+      t1=(datetime)((long)bT1+dt); t2=(datetime)((long)bT2+dt);
+   }
+   else if(gDragMode==HIT_TP)
+   {
+      double side=p-e;
+      if(!gToolLive && (lng?(side<0):(side>0)))     // pulled across the entry: flip
+      {
+         dir=lng?2:1;
+         s=2.0*e-bSL;                                // stop mirrors to the other side
+      }
+      tp=(dir==1)?MathMax(p,e+minD):MathMin(p,e-minD);
+   }
+   else if(gDragMode==HIT_SL)
+   {
+      double side=p-e;
+      if(!gToolLive && (lng?(side>0):(side<0)))
+      {
+         dir=lng?2:1;
+         tp=2.0*e-bTP;
+      }
+      s=(dir==1)?MathMin(p,e-minD):MathMax(p,e+minD);
+   }
+   else if(gDragMode==HIT_L)
+   {
+      t1=t;
+      if((long)t2-(long)t1<per*3) t1=(datetime)((long)t2-per*3);
+   }
+   else if(gDragMode==HIT_R)
+   {
+      t2=t;
+      if((long)t2-(long)t1<per*3) t2=(datetime)((long)t1+per*3);
+   }
+   else return;
+
+   bool flipped=(dir!=gTool);
+   gTool=dir;
+   gToolEntry=NormalizeDouble(e,_Digits);
+   gToolSL=NormalizeDouble(s,_Digits);
+   gToolTP=NormalizeDouble(tp,_Digits);
+   gToolT1=t1; gToolT2=t2;
+   ToolDrawAll();
    ToolPanelRows();
+   if(flipped) ToolButton();
    ChartRedraw();
 }
 
-//--- mouse released on a handle: validate, apply, commit
-void ToolDragged(string name)
+void ToolDragEnd()
 {
+   if(gDragMode==0) return;
+   gDragMode=0;
+   gOverTool=false;
+   ChartSetInteger(0,CHART_MOUSE_SCROLL,true);
    if(gTool==0) return;
-   string id=StringSubstr(name,StringLen(TP_));
-   if(StringLen(id)>1 && StringSubstr(id,StringLen(id)-1)=="t" && StringSubstr(id,0,1)=="p")
-      id=StringSubstr(id,0,StringLen(id)-1);            // "ptt" -> "pt": the pill text
-   int nDir; double nE,nS,nT; datetime nT1,nT2;
-   if(!ToolDerive(id,nDir,nE,nS,nT,nT1,nT2)){ ToolRestore(); ToolDrawAll(); ChartRedraw(); return; }
-   if(!ToolValid(nDir,nE,nS,nT))
-   {
-      SayErr("Stop and Target must stay on their side of the entry");
-      ToolRestore(); ToolDrawAll(); UpdInfo(); ChartRedraw();
-      return;
-   }
-   bool flipped=(nDir!=bDir);
-   gTool=nDir; gToolEntry=nE; gToolSL=nS; gToolTP=nT; gToolT1=nT1; gToolT2=nT2;
-   if(gToolLive && (MathAbs(nS-bSL)>0 || MathAbs(nT-bTP)>0)) ToolApply();
+   if(gToolLive && (MathAbs(gToolSL-bSL)>0 || MathAbs(gToolTP-bTP)>0)) ToolApply();
+   bool flipped=(gTool!=bDir);
    ToolCommit();
    ToolDrawAll();
    ToolButton();

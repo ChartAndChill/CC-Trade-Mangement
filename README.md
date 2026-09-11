@@ -32,7 +32,7 @@ automatically so they stay readable on whatever colours you pick.
 | TP / SL tool | Entry, Stop (−% and money), Target (+% and money), R:R and lot for the tool on the chart |
 | Execution | Lot field (**empty = auto**), BUY / SELL, Limit field (**empty = auto**), BUY LMT / SELL LMT |
 | Manage open risk | Close 25% / 50% / all, break even, delete pending |
-| Tools | Sessions, POC, VWAP, Hooman, HM RESET, TP/SL |
+| Tools | Sessions, POC, VWAP, Hooman, HM RESET, TP/SL — only Sessions is on by default |
 
 Panel position and collapsed state persist between restarts.
 
@@ -41,32 +41,32 @@ Panel position and collapsed state persist between restarts.
 The **TP/SL** button in TOOLS cycles **off → LONG → SHORT → off** (it works like
 the SESSIONS and HOOMAN toggles). Two coloured boxes appear at the current price
 with the stepper's stop distance and R:R: a green profit box from entry to **Target**
-and a red loss box from entry to **Stop**, with no extra lines. The labels are
+and a red loss box from entry to **Stop**, with nothing else drawn over the chart. The labels are
 TradingView's filled pills, centred in the box: a green
 `Target: 1.23456 (0.85%) 170, Amount: 120.00` at the top, a red
 `Stop: 1.23400 (0.42%) 85, Amount: 60.00` at the bottom, and a grey two-line
 pill on the entry with `Open P&L: +12.30, Qty: 0.50` and
 `Risk/Reward Ratio: 2.00`. Open P&L is the tool's result at the current price
-(the real position's profit once attached). A dashed line runs from the entry
-point to the current price, exactly as in TradingView.
+(the real position's profit once attached).
 
-Every part of the tool is a handle, and all of them are always armed (no
-click-to-select first):
+The mouse is handled by the EA itself, not by MetaTrader's object selection:
+nothing has to be selected first, there are no handles, and the whole tool is
+recomputed from the cursor on every mouse move, so it sticks to the pointer.
+The chart stops panning while the cursor is over the tool.
 
 | Grab | Effect |
 |---|---|
-| a box body, or the grey P&L pill | the whole tool moves |
-| the green **Target** pill, or the outer corner of the green box | Target resizes |
-| the red **Stop** pill, or the outer corner of the red box | Stop resizes |
-| the entry corner of either box | Entry moves (planner only) |
-| any corner sideways | the box gets wider or narrower |
-| **Target (or Stop) pulled across the entry** | the tool **flips** LONG ↔ SHORT, the colours swap and the other level is mirrored |
+| anywhere inside the tool — box, pill, text | the whole tool moves, in price and in time |
+| the **Target** edge (top of the green box) | Target resizes |
+| the **Stop** edge (bottom of the red box) | Stop resizes |
+| the left or right side | the box gets wider or narrower |
+| **Target (or Stop) pulled across the entry** | the tool **flips** LONG ↔ SHORT the moment it crosses; colours swap, the other level mirrors |
 
-Boxes, pills, the panel rows and the P&L line follow the mouse while you drag.
-A level dropped inside the minimum stop distance of the entry snaps back. The
-box is kept ahead of the current bar automatically. While a position is open
-the button reads **LIVE**, toggles the overlay on and off, the entry stays at
-the fill and flipping is disabled.
+A level can never be closer to the entry than the broker's minimum stop
+distance — it is clamped, not rejected. The box is kept ahead of the current
+bar automatically. While a position is open the button reads **LIVE**, toggles
+the overlay on and off, the entry stays at the fill, dragging the body shifts
+Stop and Target together, and flipping is disabled.
 
 - **BUY / SELL** use the tool's levels and its lot (or the typed lot). **BUY LMT
   / SELL LMT** use the tool's entry as the limit price.
