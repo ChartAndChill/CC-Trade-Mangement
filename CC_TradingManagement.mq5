@@ -1,13 +1,13 @@
 //+------------------------------------------------------------------+
 //|                                       CC_TradingManagement.mq5   |
-//|                        CC Trading Management  v4.80              |
+//|                        CC Trading Management  v4.90              |
 //|                                                                  |
 //|   YouTube : https://www.youtube.com/@ChartAndChill               |
 //|   This tool is FREE - forever. Please subscribe to support it.   |
 //+------------------------------------------------------------------+
 #property copyright "ChartAndChill"
 #property link      "https://www.youtube.com/@ChartAndChill"
-#property version   "4.80"
+#property version   "4.90"
 #property description "CC Trading Management - risk & execution panel with a TradingView style position tool"
 #property description "Tools: Sessions | POC + Value Area | VWAP | Hooman levels"
 #property description "YouTube: @ChartAndChill - free forever, please subscribe."
@@ -143,7 +143,7 @@ int      gOX[],gOY[];
 bool     gDrag=false;
 int      gDragDX=0,gDragDY=0;
 uint     gLastGui=0;
-datetime gLastTools=0;
+uint     gLastTools=0;
 
 //--- money management
 double   gRisk=1.0;
@@ -820,11 +820,11 @@ int OnInit()
    if(!gTester)
    {
       Print("+--------------------------------------------------------+");
-      Print("|            CC TRADING MANAGEMENT  v4.80                |");
+      Print("|            CC TRADING MANAGEMENT  v4.90                |");
       Print("|   FREE forever - please subscribe on YouTube:          |");
       Print("|            youtube.com/@ChartAndChill                  |");
-      Print("|   Drag the panel by its title bar. Drag the coloured   |");
-      Print("|   TP / SL lines on the chart to move them.             |");
+      Print("|   Drag the panel by its title bar. TOOLS > TP/SL puts  |");
+      Print("|   a position tool on the chart: grab any part of it.   |");
       Print("+--------------------------------------------------------+");
       EventSetMillisecondTimer(500);
    }
@@ -876,11 +876,11 @@ void Refresh(bool fromTimer)
    gLastGui=now;
 
    bool nb=IsNewBar();
-   bool heavy=(nb || TimeCurrent()-gLastTools>=TOOLS_SEC);
+   bool heavy=(nb || now-gLastTools>=TOOLS_SEC*1000);
 
    UpdClock();
    UpdInfo();
-   if(heavy){ RefreshTools(nb); gLastTools=TimeCurrent(); }
+   if(heavy){ RefreshTools(nb); gLastTools=now; }
    else      RefreshLight();
    ChartRedraw();
 }
@@ -901,7 +901,7 @@ void OnTick()
 {
    if(gTester && gAutoOk) AutoStrategy(IsNewBar());
    Refresh(false);
-   if(InpTrailOn && !gGui) Trail();
+   if(InpTrailOn && gTester) Trail();    // no timer inside the tester
 }
 
 //==================================================================
@@ -916,7 +916,7 @@ void OnChartEvent(const int id,const long &lparam,const double &dparam,const str
       int mx=(int)lparam,my=(int)dparam;
       int state=(int)StringToInteger(sparam);
       bool lmb=((state&1)!=0);
-      bool press=(lmb && !gLmbPrev),release=(!lmb && gLmbPrev);
+      bool press=(lmb && !gLmbPrev);
       gLmbPrev=lmb;
 
       if(gDrag)                                   // panel being moved
@@ -951,6 +951,7 @@ void OnChartEvent(const int id,const long &lparam,const double &dparam,const str
 
    if(id==CHARTEVENT_CHART_CHANGE)
    {
+      if(gDragMode!=0) ToolDragEnd();
       ClampPos(); ApplyPos();
       if(gTool!=0) ToolLabels();          // pixel pills follow scroll / zoom
       if(gSess)    SessPills();
@@ -1738,7 +1739,6 @@ void ToolButton()
 }
 
 void ToolCommit()  { bEntry=gToolEntry; bSL=gToolSL; bTP=gToolTP; bT1=gToolT1; bT2=gToolT2; bDir=gTool; }
-void ToolRestore() { gToolEntry=bEntry; gToolSL=bSL; gToolTP=bTP; gToolT1=bT1; gToolT2=bT2; gTool=bDir; }
 
 void ToolClear()
 {
@@ -1875,9 +1875,11 @@ void ToolLabels()
    double pctSL=(gToolEntry>0)?MathAbs(gToolSL-gToolEntry)/gToolEntry*100.0:0;
    double rr=(MathAbs(gToolSL-gToolEntry)>0)?MathAbs(gToolTP-gToolEntry)/MathAbs(gToolSL-gToolEntry):0;
 
-   string sTP="Target: "+DoubleToString(gToolTP,_Digits)+" ("+DoubleToString(pctTP,2)+"%) "+
+   string tpName=(gToolLive && gToolPosTP<=0.0)?"Target (not set): ":"Target: ";
+   string slName=(gToolLive && gToolPosSL<=0.0)?"Stop (not set): ":"Stop: ";
+   string sTP=tpName+DoubleToString(gToolTP,_Digits)+" ("+DoubleToString(pctTP,2)+"%) "+
               DoubleToString(MathAbs(gToolTP-gToolEntry)/pt,0)+", Amount: "+DoubleToString(MathAbs(pTP),2);
-   string sSL="Stop: "+DoubleToString(gToolSL,_Digits)+" ("+DoubleToString(pctSL,2)+"%) "+
+   string sSL=slName+DoubleToString(gToolSL,_Digits)+" ("+DoubleToString(pctSL,2)+"%) "+
               DoubleToString(MathAbs(gToolSL-gToolEntry)/pt,0)+", Amount: "+DoubleToString(MathAbs(pSL),2);
    string sM1="Open P&L: "+Money(pNow)+", Qty: "+DoubleToString(lot,VolDigits());
    string sM2="Risk/Reward Ratio: "+DoubleToString(rr,2);
@@ -1987,7 +1989,7 @@ double ToolLot()
 //==================================================================
 int ToolHit(int mx,int my)
 {
-   if(gTool==0) return(HIT_NONE);
+   if(gTool==0 || gWelcomeLeft>0) return(HIT_NONE);
    // the panel wins over anything under it
    if(mx>=gPX && mx<=gPX+PW && my>=gPY && my<=gPY+PanelHeight()) return(HIT_NONE);
 
