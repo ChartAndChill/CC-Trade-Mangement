@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
 //|                                       CC_TradingManagement.mq5   |
-//|                        CC Trading Management  v4.20              |
+//|                        CC Trading Management  v4.30              |
 //|                                                                  |
 //|   YouTube : https://www.youtube.com/@ChartAndChill               |
 //|   This tool is FREE - forever. Please subscribe to support it.   |
 //+------------------------------------------------------------------+
 #property copyright "ChartAndChill"
 #property link      "https://www.youtube.com/@ChartAndChill"
-#property version   "4.20"
+#property version   "4.30"
 #property description "CC Trading Management - risk & execution panel with a TradingView style position tool"
-#property description "Tools: Camarilla | Sessions | POC + Value Area | VWAP | Hooman levels"
+#property description "Tools: Sessions | POC + Value Area | VWAP | Hooman levels"
 #property description "YouTube: @ChartAndChill - free forever, please subscribe."
 
 #include <Trade\Trade.mqh>
@@ -29,7 +29,6 @@ input int    InpTrailStart   = 100;      // Trailing start (points)
 input int    InpTrailStep    = 50;       // Trailing distance (points)
 
 input group "===== Tools on start ====="
-input bool   InpCamOn        = true;     // Camarilla pivots
 input bool   InpSessOn       = true;     // Session boxes
 input bool   InpPocOn        = true;     // POC / Volume profile
 input bool   InpVwapOn       = true;     // VWAP
@@ -58,15 +57,13 @@ input color  InpPanelAccent  = C'255,204,0';    // Active toggle accent (gold)
 input int    InpWelcomeSec   = 30;       // Welcome card duration (sec, 0=off)
 
 input group "===== Chart colors ====="
-input color  InpCamBuy       = C'0,150,70';     // Camarilla: support side (buy)
-input color  InpCamSell      = C'205,45,45';    // Camarilla: resistance side (sell)
 input color  InpPocColor     = C'233,30,120';   // POC (deep pink)
 input color  InpVwapColor    = C'224,168,20';   // VWAP (deep gold)
 input color  InpAsiaColor    = C'46,125,225';   // Asia session box
 input color  InpLonColor     = C'150,80,215';   // London session box
 input color  InpNyColor      = C'240,140,30';   // New York session box
-input int    InpSessOpacity  = 18;       // Session fill opacity % (0=off, 100=solid)
-input bool   InpSessBorder   = true;     // Session box outline
+input int    InpSessOpacity  = 12;       // Session fill opacity % (0=off, 100=solid)
+input bool   InpSessEdges    = true;     // Session high / low edge lines
 
 input group "===== Position tool (TradingView style) ====="
 input color  InpTpColor      = C'38,196,120';   // Target line / profit zone
@@ -95,7 +92,6 @@ input double InpAutoAtrSL    = 1.5;      // Auto: stop loss = ATR x
 //                        CONSTANTS
 //==================================================================
 #define PX   "CCM_"      // panel
-#define CP   "CCC_"      // camarilla
 #define SP   "CCS_"      // sessions
 #define PP   "CCP_"      // poc
 #define VP   "CCV_"      // vwap
@@ -144,7 +140,7 @@ int      gSLPts=200;
 double   gRR=2.0;
 
 //--- tools
-bool     gCam=true,gSess=true,gPOC=true,gVWAP=true,gHooman=true;
+bool     gSess=true,gPOC=true,gVWAP=true,gHooman=true;
 double   gPocPrice=0,gVAH=0,gVAL=0;
 double   gVwapVal=0;
 double   gVwapLine[];
@@ -152,8 +148,6 @@ datetime gVwapTime[];
 double   gVwapCumPV=0,gVwapCumV=0;
 datetime gVwapDayDrawn=0;
 int      gVwapPrevStart=0;
-datetime gCamDay=0;
-double   gCamR4=0,gCamR3=0,gCamR2=0,gCamR1=0,gCamPP=0,gCamS1=0,gCamS2=0,gCamS3=0,gCamS4=0;
 
 //--- hooman
 datetime gHmDay=0,gHmT0=0;
@@ -214,14 +208,6 @@ color Translucent(color c,int opacityPct)
    int op=(int)MathMax(0,MathMin(opacityPct,100));
    color bg=(color)ChartGetInteger(0,CHART_COLOR_BACKGROUND);
    return(Blend(bg,c,(double)op/100.0));
-}
-
-color CamShade(color base,int step)
-{
-   double t[4]={0.00,0.16,0.42,0.62};
-   if(step<0) step=0;
-   if(step>3) step=3;
-   return(Blend(base,C'155,160,172',t[step]));
 }
 
 string Trim(string s)
@@ -594,13 +580,12 @@ void DrawPanel()
    //--- tools --------------------------------------------------------
    Sep("s6",y); y+=9;
    Cap("c6",y,"TOOLS",accPink); y+=13;
-   MkB("tc",PAD,y,third,22,"CAMARILLA",gCam?gcOn:gcBtn,gCam?gcOnTx:gcBtnTx,7);
-   MkB("ts",PAD+third+4,y,third,22,"SESSIONS",gSess?gcOn:gcBtn,gSess?gcOnTx:gcBtnTx,7);
-   MkB("tp",PAD+2*(third+4),y,third,22,"POC",gPOC?gcOn:gcBtn,gPOC?gcOnTx:gcBtnTx,7);
+   MkB("ts",PAD,y,third,22,"SESSIONS",gSess?gcOn:gcBtn,gSess?gcOnTx:gcBtnTx,7);
+   MkB("tp",PAD+third+4,y,third,22,"POC",gPOC?gcOn:gcBtn,gPOC?gcOnTx:gcBtnTx,7);
+   MkB("tv",PAD+2*(third+4),y,third,22,"VWAP",gVWAP?gcOn:gcBtn,gVWAP?gcOnTx:gcBtnTx,7);
    y+=25;
-   MkB("tv",PAD,y,third,22,"VWAP",gVWAP?gcOn:gcBtn,gVWAP?gcOnTx:gcBtnTx,7);
-   MkB("th",PAD+third+4,y,third,22,"HOOMAN",gHooman?gcOn:gcBtn,gHooman?gcOnTx:gcBtnTx,7);
-   MkB("thr",PAD+2*(third+4),y,third,22,"HM RESET",gcBtn,gcBtnTx,7);
+   MkB("th",PAD,y,third,22,"HOOMAN",gHooman?gcOn:gcBtn,gHooman?gcOnTx:gcBtnTx,7);
+   MkB("thr",PAD+third+4,y,third,22,"HM RESET",gcBtn,gcBtnTx,7);
    y+=26;
 
    //--- status + footer ---------------------------------------------
@@ -780,7 +765,7 @@ int OnInit()
    gRisk  =MathMax(0.01,MathMin(InpRiskPct,20.0));
    gSLPts =(int)MathMax(1,InpSLPts);
    gRR    =MathMax(0.1,InpRR);
-   gCam=InpCamOn; gSess=InpSessOn; gPOC=InpPocOn; gVWAP=InpVwapOn; gHooman=InpHoomanOn;
+   gSess=InpSessOn; gPOC=InpPocOn; gVWAP=InpVwapOn; gHooman=InpHoomanOn;
 
    InitTheme();
 
@@ -817,7 +802,7 @@ int OnInit()
    if(!gTester)
    {
       Print("+--------------------------------------------------------+");
-      Print("|            CC TRADING MANAGEMENT  v4.20                |");
+      Print("|            CC TRADING MANAGEMENT  v4.30                |");
       Print("|   FREE forever - please subscribe on YouTube:          |");
       Print("|            youtube.com/@ChartAndChill                  |");
       Print("|   Drag the panel by its title bar. Drag the coloured   |");
@@ -851,7 +836,7 @@ void OnDeinit(const int reason)
    if(hFast!=INVALID_HANDLE) IndicatorRelease(hFast);
    if(hSlow!=INVALID_HANDLE) IndicatorRelease(hSlow);
    if(hAtr !=INVALID_HANDLE) IndicatorRelease(hAtr);
-   ObjectsDeleteAll(0,PX);  ObjectsDeleteAll(0,CP);  ObjectsDeleteAll(0,SP);
+   ObjectsDeleteAll(0,PX);  ObjectsDeleteAll(0,SP);
    ObjectsDeleteAll(0,PP);  ObjectsDeleteAll(0,VP);  ObjectsDeleteAll(0,HP);
    ObjectsDeleteAll(0,TP_); ObjectsDeleteAll(0,WP);
    ChartSetInteger(0,CHART_MOUSE_SCROLL,true);
@@ -942,6 +927,7 @@ void OnChartEvent(const int id,const long &lparam,const double &dparam,const str
    {
       ClampPos(); ApplyPos();
       if(gTool!=0) ToolLabels();          // pixel pills follow scroll / zoom
+      if(gSess)    SessPills();
       ChartRedraw();
       return;
    }
@@ -1022,7 +1008,6 @@ void OnChartEvent(const int id,const long &lparam,const double &dparam,const str
    if(sparam==PX+"dp" ){ XDelPending(); UpdInfo(); ChartRedraw(); return; }
 
    //--- tool toggles
-   if(sparam==PX+"tc"){ gCam=!gCam;   Tog("tc",gCam);  if(gCam){gCamDay=0;DrawCamarilla();} else ObjectsDeleteAll(0,CP); ChartRedraw(); return; }
    if(sparam==PX+"ts"){ gSess=!gSess; Tog("ts",gSess); if(gSess) DrawSessions(); else ObjectsDeleteAll(0,SP); ChartRedraw(); return; }
    if(sparam==PX+"tp"){ gPOC=!gPOC;   Tog("tp",gPOC);  if(gPOC) UpdPOC(); else { ObjectsDeleteAll(0,PP); gPocPrice=0; gVAH=0; gVAL=0; } ChartRedraw(); return; }
    if(sparam==PX+"tv"){ gVWAP=!gVWAP; Tog("tv",gVWAP); if(gVWAP) UpdVWAP(true); else { ObjectsDeleteAll(0,VP); gVwapVal=0; gVwapDayDrawn=0; } ChartRedraw(); return; }
@@ -1165,63 +1150,18 @@ bool InSessionHour(int h,int open,int close)
 void RefreshLight()
 {
    if(gVWAP) UpdVWAPLast();
+   if(gSess) SessPills();
    if(gTool!=0) ToolRefresh();
 }
 
 void RefreshTools(bool newBar)
 {
-   if(gCam)    DrawCamarilla();
    if(gSess)   DrawSessions();
    if(gPOC)    UpdPOC();
    if(gVWAP)   UpdVWAP(newBar);
    if(gPOC && gVWAP) ChkConfluence();
    if(gHooman) HoomanDraw();
    if(gTool!=0) ToolRefresh();
-}
-
-//==================================================================
-//   CAMARILLA  (green .. grey .. red ladder)
-//==================================================================
-void DrawCamarilla()
-{
-   datetime d0=iTime(_Symbol,PERIOD_D1,0);
-   if(d0<=0) return;
-   if(d0!=gCamDay)
-   {
-      double dh[],dl[],dc[];
-      ArraySetAsSeries(dh,false); ArraySetAsSeries(dl,false); ArraySetAsSeries(dc,false);
-      if(CopyHigh (_Symbol,PERIOD_D1,1,1,dh)<1) return;
-      if(CopyLow  (_Symbol,PERIOD_D1,1,1,dl)<1) return;
-      if(CopyClose(_Symbol,PERIOD_D1,1,1,dc)<1) return;
-      double h=dh[0],l=dl[0],c=dc[0],r=h-l;
-      if(r<=0.0) return;
-      gCamR4=NormalizeDouble(c+r*1.1/2.0 ,_Digits);
-      gCamR3=NormalizeDouble(c+r*1.1/4.0 ,_Digits);
-      gCamR2=NormalizeDouble(c+r*1.1/6.0 ,_Digits);
-      gCamR1=NormalizeDouble(c+r*1.1/12.0,_Digits);
-      gCamPP=NormalizeDouble((h+l+c)/3.0 ,_Digits);
-      gCamS1=NormalizeDouble(c-r*1.1/12.0,_Digits);
-      gCamS2=NormalizeDouble(c-r*1.1/6.0 ,_Digits);
-      gCamS3=NormalizeDouble(c-r*1.1/4.0 ,_Digits);
-      gCamS4=NormalizeDouble(c-r*1.1/2.0 ,_Digits);
-      gCamDay=d0;
-   }
-   CamLine("R4",gCamR4,CamShade(InpCamSell,0),STYLE_DOT  ,1);
-   CamLine("R3",gCamR3,CamShade(InpCamSell,1),STYLE_SOLID,2);
-   CamLine("R2",gCamR2,CamShade(InpCamSell,2),STYLE_DOT  ,1);
-   CamLine("R1",gCamR1,CamShade(InpCamSell,3),STYLE_DOT  ,1);
-   CamLine("PP",gCamPP,C'130,136,150'        ,STYLE_DASH ,1);
-   CamLine("S1",gCamS1,CamShade(InpCamBuy ,3),STYLE_DOT  ,1);
-   CamLine("S2",gCamS2,CamShade(InpCamBuy ,2),STYLE_DOT  ,1);
-   CamLine("S3",gCamS3,CamShade(InpCamBuy ,1),STYLE_SOLID,2);
-   CamLine("S4",gCamS4,CamShade(InpCamBuy ,0),STYLE_DOT  ,1);
-}
-
-void CamLine(string tag,double price,color c,ENUM_LINE_STYLE st,int wd)
-{
-   if(price<=0) return;
-   HLineAt(CP+tag,price,c,st,wd);
-   TagAt(CP+"L"+tag,RightEdge(),price,tag+" "+DoubleToString(price,_Digits),c,7,ANCHOR_LEFT_LOWER,true);
 }
 
 //--- shared helpers for horizontal lines and text tags
@@ -1258,72 +1198,138 @@ void TagAt(string n,datetime t,double price,string txt,color c,int fs,ENUM_ANCHO
 }
 
 //==================================================================
-//   SESSIONS  (translucent coloured boxes, GMT hours -> server time)
+//   SESSIONS
+//   A soft translucent box over each session's own high / low with
+//   dotted high and low edges and a small name pill in the corner
+//   showing the session's range. Hours are GMT inputs; the server
+//   offset comes from TimeTradeServer(), a live clock, so weekends and
+//   quote gaps cannot skew it (TimeCurrent() is the last tick and is
+//   days old on a Saturday). Drawn on H1 and lower only.
 //==================================================================
+long ServerGmtOffset()
+{
+   long off=(long)TimeTradeServer()-(long)TimeGMT();
+   return((long)MathRound((double)off/900.0)*900);      // nearest 15 minutes
+}
+
 void DrawSessions()
 {
+   if(PeriodSeconds()>3600){ ObjectsDeleteAll(0,SP); return; }
    int days=(int)MathMax(1,MathMin(InpSessDays,10));
-   long off=(long)TimeCurrent()-(long)TimeGMT();
+   long off=ServerGmtOffset();
    long gmtNow=(long)TimeGMT();
    long gmtMid=gmtNow-(gmtNow%86400);
-   for(int d=0;d<days;d++)
+   for(int d=0;d<10;d++)
    {
-      long base=gmtMid-(long)d*86400;
       string sfx=IntegerToString(d);
+      if(d>=days){ SessDrop("a"+sfx); SessDrop("l"+sfx); SessDrop("n"+sfx); continue; }
+      long base=gmtMid-(long)d*86400;
       SessBox("a"+sfx,base,off,InpAsiaOpen,InpAsiaClose,"ASIA"    ,InpAsiaColor);
       SessBox("l"+sfx,base,off,InpLonOpen ,InpLonClose ,"LONDON"  ,InpLonColor);
       SessBox("n"+sfx,base,off,InpNyOpen  ,InpNyClose  ,"NEW YORK",InpNyColor);
    }
 }
 
+void SessDrop(string id)
+{
+   ObjectDelete(0,SP+id);
+   ObjectDelete(0,SP+id+"h");
+   ObjectDelete(0,SP+id+"l");
+   ObjectDelete(0,SP+id+"p");
+}
+
 void SessBox(string id,long gmtBase,long off,int hOpen,int hClose,string title,color c)
 {
-   if(hOpen==hClose) return;
+   if(hOpen==hClose){ SessDrop(id); return; }
    long t1l=gmtBase+(long)hOpen*3600+off;
    long t2l=gmtBase+(long)hClose*3600+off;
-   if(hClose<hOpen) t2l+=86400;
-   datetime t1=(datetime)t1l,t2=(datetime)t2l,now=TimeCurrent();
-   if(t1>now) return;
+   if(hClose<hOpen) t2l+=86400;                       // session crossing midnight
+   datetime t1=(datetime)t1l,t2=(datetime)t2l;
+
+   datetime last=iTime(_Symbol,PERIOD_CURRENT,0);
+   if(last<=0){ SessDrop(id); return; }
+   datetime now=last+PeriodSeconds();                 // end of the live bar
+   if(t1>=now){ SessDrop(id); return; }               // not started yet
    datetime te=(t2>now)?now:t2;
 
    int total=Bars(_Symbol,PERIOD_CURRENT);
-   if(total<10) return;
-   if(t1<iTime(_Symbol,PERIOD_CURRENT,total-1)) return;
+   if(total<10 || t1<iTime(_Symbol,PERIOD_CURRENT,total-1)){ SessDrop(id); return; }
 
+   // te-1: the bar that ENDS at the close, not the first bar after it
    int i2=iBarShift(_Symbol,PERIOD_CURRENT,t1,false);
-   int i1=iBarShift(_Symbol,PERIOD_CURRENT,te,false);
-   if(i1<0 || i2<0 || i2<i1) return;
-   while(i2>i1 && iTime(_Symbol,PERIOD_CURRENT,i2)<t1) i2--;
+   int i1=iBarShift(_Symbol,PERIOD_CURRENT,te-1,false);
+   if(i1<0 || i2<0 || i2<i1){ SessDrop(id); return; }
+   while(i2>i1 && iTime(_Symbol,PERIOD_CURRENT,i2)<t1) i2--;   // skip a gap
    datetime bStart=iTime(_Symbol,PERIOD_CURRENT,i2);
-   if(bStart<t1) return;
+   if(bStart<t1){ SessDrop(id); return; }
 
    int cnt=i2-i1+1;
    int ih=iHighest(_Symbol,PERIOD_CURRENT,MODE_HIGH,cnt,i1);
    int il=iLowest (_Symbol,PERIOD_CURRENT,MODE_LOW ,cnt,i1);
-   if(ih<0 || il<0) return;
+   if(ih<0 || il<0){ SessDrop(id); return; }
    double ph=iHigh(_Symbol,PERIOD_CURRENT,ih),pl=iLow(_Symbol,PERIOD_CURRENT,il);
-   if(ph<=0.0 || pl<=0.0 || ph<=pl) return;
+   if(ph<=0.0 || pl<=0.0 || ph<=pl){ SessDrop(id); return; }
    datetime left=(bStart>t1)?bStart:t1;
 
    RectAt(SP+id,left,ph,te,pl,Translucent(c,InpSessOpacity),true);
-   string nb=SP+id+"b";
-   if(InpSessBorder) RectAt(nb,left,ph,te,pl,c,false);
-   else ObjectDelete(0,nb);
 
-   string nl=SP+id+"t";
-   if(ObjectFind(0,nl)<0)
+   if(InpSessEdges)
    {
-      ObjectCreate(0,nl,OBJ_TEXT,0,left,ph);
-      ObjectSetInteger(0,nl,OBJPROP_ANCHOR,ANCHOR_LEFT_LOWER);
-      ObjectSetString (0,nl,OBJPROP_FONT,FONT_UI);
-      ObjectSetInteger(0,nl,OBJPROP_FONTSIZE,8);
-      ObjectSetInteger(0,nl,OBJPROP_SELECTABLE,false);
-      ObjectSetInteger(0,nl,OBJPROP_HIDDEN,true);
-      ObjectSetInteger(0,nl,OBJPROP_BACK,false);
-      ObjectSetString (0,nl,OBJPROP_TEXT,title);
+      color ec=Translucent(c,55);
+      SegAt(SP+id+"h",left,ph,te,ph,ec,STYLE_DOT,1);
+      SegAt(SP+id+"l",left,pl,te,pl,ec,STYLE_DOT,1);
    }
-   ObjectMove(0,nl,0,left,ph);
-   ObjectSetInteger(0,nl,OBJPROP_COLOR,c);
+   else { ObjectDelete(0,SP+id+"h"); ObjectDelete(0,SP+id+"l"); }
+
+   double pt=SymbolInfoDouble(_Symbol,SYMBOL_POINT);
+   string txt=title+"   "+DoubleToString((ph-pl)/pt,0)+" p";
+   PillXY(SP+id+"p",0,0,txt,c,7,false);              // text / colour; placed below
+   SessPlace(id);
+}
+
+//--- put the name pill inside the top-left corner of its box
+void SessPlace(string id)
+{
+   string r=SP+id,n=SP+id+"p";
+   if(ObjectFind(0,r)<0 || ObjectFind(0,n)<0) return;
+   datetime t1=(datetime)ObjectGetInteger(0,r,OBJPROP_TIME,0);
+   datetime t2=(datetime)ObjectGetInteger(0,r,OBJPROP_TIME,1);
+   double ph=ObjectGetDouble(0,r,OBJPROP_PRICE,0);
+   int x1=0,y1=0,x2=0,y2=0;
+   bool ok=ChartTimePriceToXY(0,0,t1,ph,x1,y1) && ChartTimePriceToXY(0,0,t2,ph,x2,y2);
+   int cw=(int)ChartGetInteger(0,CHART_WIDTH_IN_PIXELS);
+   int x=x1+4;
+   if(x<4 && x2>60) x=4;                              // box starts off screen: keep the tag readable
+   string txt=ObjectGetString(0,n,OBJPROP_TEXT);
+   color c=(color)ObjectGetInteger(0,n,OBJPROP_BGCOLOR);
+   PillXY(n,x,y1+4,txt,c,7,ok && x<cw && x2>0);
+}
+
+void SessPills()
+{
+   for(int d=0;d<10;d++)
+   {
+      string s=IntegerToString(d);
+      SessPlace("a"+s); SessPlace("l"+s); SessPlace("n"+s);
+   }
+}
+
+//--- bounded line segment drawn behind the candles
+void SegAt(string n,datetime t1,double p1,datetime t2,double p2,color c,ENUM_LINE_STYLE st,int wd)
+{
+   if(ObjectFind(0,n)<0)
+   {
+      ObjectCreate(0,n,OBJ_TREND,0,t1,p1,t2,p2);
+      ObjectSetInteger(0,n,OBJPROP_RAY_RIGHT,false);
+      ObjectSetInteger(0,n,OBJPROP_BACK,true);
+      ObjectSetInteger(0,n,OBJPROP_SELECTABLE,false);
+      ObjectSetInteger(0,n,OBJPROP_HIDDEN,true);
+   }
+   ObjectMove(0,n,0,t1,p1);
+   ObjectMove(0,n,1,t2,p2);
+   ObjectSetInteger(0,n,OBJPROP_COLOR,c);
+   ObjectSetInteger(0,n,OBJPROP_STYLE,st);
+   ObjectSetInteger(0,n,OBJPROP_WIDTH,wd);
 }
 
 //--- filled (fill=true) or outlined rectangle drawn behind the candles
@@ -1831,10 +1837,10 @@ void ToolLabels()
    ok=ChartTimePriceToXY(0,0,gToolT1,gToolSL,d,yS) && ok;
    int xc=(x1+x2)/2;
 
-   Pill("pt" ,xc,lng?yT+3:yT-21,sTP,InpTpColor,ok);
-   Pill("ps" ,xc,lng?yS-21:yS+3,sSL,InpSlColor,ok);
-   Pill("pm1",xc,yE-19,sM1,C'110,114,126',ok);
-   Pill("pm2",xc,yE+1 ,sM2,C'110,114,126',ok);
+   PillXY(TP_+"pt" ,xc-PillW(sTP,8)/2,lng?yT+3:yT-21,sTP,InpTpColor,8,ok);
+   PillXY(TP_+"ps" ,xc-PillW(sSL,8)/2,lng?yS-21:yS+3,sSL,InpSlColor,8,ok);
+   PillXY(TP_+"pm1",xc-PillW(sM1,8)/2,yE-19,sM1,C'110,114,126',8,ok);
+   PillXY(TP_+"pm2",xc-PillW(sM2,8)/2,yE+1 ,sM2,C'110,114,126',8,ok);
 
    //--- dashed line from the entry point to the current price
    datetime tNow=iTime(_Symbol,PERIOD_CURRENT,0);
@@ -1857,14 +1863,15 @@ void ToolLabels()
    }
 }
 
-//--- a filled, centred, read-only text pill in pixel space
-void Pill(string id,int xc,int y,string text,color bg,bool visible)
+
+//--- pixel-space text pills (used by the position tool and the sessions)
+int PillW(string text,int fs){ return((int)(StringLen(text)*0.78*fs)+16); }
+
+void PillXY(string n,int x,int y,string text,color bg,int fs,bool visible)
 {
-   string n=TP_+id;
-   int w=(int)(StringLen(text)*6.3)+16,h=18;
+   int w=PillW(text,fs),h=fs*2+2;
    int cw=(int)ChartGetInteger(0,CHART_WIDTH_IN_PIXELS);
    int ch=(int)ChartGetInteger(0,CHART_HEIGHT_IN_PIXELS);
-   int x=xc-w/2;
    bool vis=visible && (x+w>0 && x<cw && y+h>0 && y<ch);
    if(ObjectFind(0,n)<0)
    {
@@ -1873,8 +1880,7 @@ void Pill(string id,int xc,int y,string text,color bg,bool visible)
       ObjectSetInteger(0,n,OBJPROP_READONLY,true);
       ObjectSetInteger(0,n,OBJPROP_ALIGN,ALIGN_CENTER);
       ObjectSetString (0,n,OBJPROP_FONT,FONT_UI);
-      ObjectSetInteger(0,n,OBJPROP_FONTSIZE,8);
-      ObjectSetInteger(0,n,OBJPROP_COLOR,C'255,255,255');
+      ObjectSetInteger(0,n,OBJPROP_FONTSIZE,fs);
       ObjectSetInteger(0,n,OBJPROP_SELECTABLE,false);
       ObjectSetInteger(0,n,OBJPROP_HIDDEN,true);
       ObjectSetInteger(0,n,OBJPROP_ZORDER,4);
@@ -1885,6 +1891,7 @@ void Pill(string id,int xc,int y,string text,color bg,bool visible)
    ObjectSetInteger(0,n,OBJPROP_YSIZE,h);
    ObjectSetInteger(0,n,OBJPROP_BGCOLOR,bg);
    ObjectSetInteger(0,n,OBJPROP_BORDER_COLOR,bg);
+   ObjectSetInteger(0,n,OBJPROP_COLOR,TextOn(bg));
    if(ObjectGetString(0,n,OBJPROP_TEXT)!=text) ObjectSetString(0,n,OBJPROP_TEXT,text);
    ObjectSetInteger(0,n,OBJPROP_TIMEFRAMES,vis?OBJ_ALL_PERIODS:OBJ_NO_PERIODS);
 }

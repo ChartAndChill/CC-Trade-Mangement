@@ -1,7 +1,7 @@
 # CC Trading Management
 
 A risk-management and execution panel for MetaTrader 5 with a TradingView-style
-position tool, session boxes, Camarilla, POC/VWAP and the Hooman level ladder.
+position tool, session boxes, POC/VWAP and the Hooman level ladder.
 
 **Free forever.** The only thing asked in return is a subscribe on YouTube:
 **[youtube.com/@ChartAndChill](https://www.youtube.com/@ChartAndChill)**
@@ -32,7 +32,7 @@ automatically so they stay readable on whatever colours you pick.
 | Position tool | LONG / SHORT / CLEAR, then Entry, Stop (−% and money), Target (+% and money), R:R and lot |
 | Execution | Lot field (**empty = auto**), BUY / SELL, Limit field (**empty = auto**), BUY LMT / SELL LMT |
 | Manage open risk | Close 25% / 50% / all, break even, delete pending |
-| Tools | Camarilla, Sessions, POC, VWAP, Hooman, HM RESET |
+| Tools | Sessions, POC, VWAP, Hooman, HM RESET |
 
 Panel position and collapsed state persist between restarts.
 
@@ -94,13 +94,16 @@ recomputes on each new day. Colours: `InpHmHiLo`, `InpHmMid`, `InpHmQuarter`,
 
 ## Other chart tools
 
-- **Camarilla** — R4…R1 / PP / S1…S4 from the previous daily bar as a green →
-  grey → red ladder, S3/R3 solid and thicker, recomputed daily.
-- **Sessions** — Asia (blue), London (violet), New York (orange) translucent boxes
-  labelled with their name, from each session's own high/low. Hours are GMT
-  inputs converted to broker time. MT5 objects have no alpha channel, so the fill
-  is the session colour mixed into the chart background and drawn behind the
-  candles (`InpSessOpacity`, `InpSessBorder`).
+- **Sessions** — Asia (blue), London (violet), New York (orange) as soft
+  translucent boxes over each session's own high/low, with dotted high/low edges
+  and a small name pill in the corner showing the session's range in points.
+  Hours are GMT inputs converted to broker time using `TimeTradeServer()`, a
+  live clock, so the offset is right on weekends too (the last-tick time is days
+  old on a Saturday). The bar that *ends* at the close is the last one counted —
+  the first bar after the close no longer leaks into the range. Drawn on H1 and
+  below. MT5 objects have no alpha channel, so the fill is the session colour
+  mixed into the chart background and drawn behind the candles
+  (`InpSessOpacity`, `InpSessEdges`).
 - **POC + Value Area** — rolling volume profile, POC in deep pink with a softer
   70% value area.
 - **VWAP** — session anchored, deep gold, plotted as a curve.
@@ -151,11 +154,11 @@ is built only in visual mode, so validation stays fast.
 | Group | Inputs |
 |---|---|
 | Risk & Execution | `InpRiskPct`, `InpRR`, `InpSLPts`, `InpLimitDist`, `InpDeviation`, `InpMagic`, `InpTrailOn`, `InpTrailStart`, `InpTrailStep` |
-| Tools on start | `InpCamOn`, `InpSessOn`, `InpPocOn`, `InpVwapOn`, `InpHoomanOn` |
+| Tools on start | `InpSessOn`, `InpPocOn`, `InpVwapOn`, `InpHoomanOn` |
 | Tool settings | `InpPOCBars`, `InpPOCBins`, `InpPOCValueArea`, `InpVwapMaxBars`, `InpSessDays`, `InpConflPts` |
 | Session hours (GMT) | `InpAsiaOpen` … `InpNyClose` |
 | Panel colors | `InpPanelBody`, `InpPanelHead`, `InpPanelAccent`, `InpWelcomeSec` |
-| Chart colors | `InpCamBuy`, `InpCamSell`, `InpPocColor`, `InpVwapColor`, `InpAsiaColor`, `InpLonColor`, `InpNyColor`, `InpSessOpacity`, `InpSessBorder` |
+| Chart colors | `InpPocColor`, `InpVwapColor`, `InpAsiaColor`, `InpLonColor`, `InpNyColor`, `InpSessOpacity`, `InpSessEdges` |
 | Position tool | `InpTpColor`, `InpSlColor`, `InpEntryColor`, `InpToolOpacity`, `InpToolBars` |
 | Hooman levels | `InpHmHiLo`, `InpHmMid`, `InpHmQuarter`, `InpHmEighth` |
 | Strategy Tester only | `InpTesterAuto`, `InpAutoFast`, `InpAutoSlow`, `InpAutoAtrSL` |
