@@ -29,17 +29,18 @@ automatically so they stay readable on whatever colours you pick.
 | Header | Drag it to move the panel · `-` collapses · a light is green only when an order can be sent (hover it for the reason when red) |
 | Account | Balance, Equity, Floating P/L, Today P/L (closed + open) |
 | Money management | Risk % / Stop loss / R:R steppers, real risk amount, computed lot, exposure bar |
-| Position tool | LONG / SHORT / CLEAR, then Entry, Stop (−% and money), Target (+% and money), R:R and lot |
+| TP / SL tool | Entry, Stop (−% and money), Target (+% and money), R:R and lot for the tool on the chart |
 | Execution | Lot field (**empty = auto**), BUY / SELL, Limit field (**empty = auto**), BUY LMT / SELL LMT |
 | Manage open risk | Close 25% / 50% / all, break even, delete pending |
-| Tools | Sessions, POC, VWAP, Hooman, HM RESET |
+| Tools | Sessions, POC, VWAP, Hooman, HM RESET, TP/SL |
 
 Panel position and collapsed state persist between restarts.
 
 ## Position tool (TradingView style)
 
-Press **LONG** or **SHORT**. Two coloured boxes appear at the current price with
-the stepper's stop distance and R:R: a green profit box from entry to **Target**
+The **TP/SL** button in TOOLS cycles **off → LONG → SHORT → off** (it works like
+the SESSIONS and HOOMAN toggles). Two coloured boxes appear at the current price
+with the stepper's stop distance and R:R: a green profit box from entry to **Target**
 and a red loss box from entry to **Stop**, with crisp edge lines. The labels are
 TradingView's filled pills, centred in the box: a green
 `Target: 1.23456 (0.85%) 170, Amount: 120.00` at the top, a red
@@ -49,26 +50,27 @@ pill on the entry with `Open P&L: +12.30, Qty: 0.50` and
 (the real position's profit once attached). A dashed line runs from the entry
 point to the current price, exactly as in TradingView.
 
-The boxes are the handles — every part can be moved or resized:
+The handles are full-width lines, which is the smoothest thing MT5 can drag:
+grab them anywhere on the chart, they are always armed (no click-to-select
+first), and they only move vertically.
 
 | Grab | Effect |
 |---|---|
-| a box (its body) | the whole tool moves |
-| the outer corner of the green box | Target resizes |
-| the outer corner of the red box | Stop resizes |
-| the entry corner of either box | Entry moves (planner only) |
-| any corner sideways | the box reaches further or shorter in time |
+| the green **Target** line | Target resizes |
+| the red **Stop** line | Stop resizes |
+| the dashed **Entry** line | the whole tool moves (planner only) |
+| the grey handle on the left or right side of the box | the box gets wider or narrower |
 
-Lines and labels follow the mouse while you drag. A Stop or Target cannot be
-dropped on the wrong side of the entry — the box snaps back. The box is kept
-ahead of the current bar automatically.
+Boxes, pills and the P&L line follow the mouse while you drag. A Stop or Target
+cannot be dropped on the wrong side of the entry — the line snaps back. The box
+is kept ahead of the current bar automatically. While a position is open the
+button reads **LIVE** and toggles the overlay on and off.
 
 - **BUY / SELL** use the tool's levels and its lot (or the typed lot). **BUY LMT
   / SELL LMT** use the tool's entry as the limit price.
 - The moment a position with the panel's magic number exists, the tool
   **attaches to it**: entry becomes the real fill (and stays fixed), and moving
-  Stop / Target — by corner or by dragging the whole box — **modifies the real
-  position**. If the position is changed elsewhere the lines
+  the Stop / Target lines **modifies the real position**. If the position is changed elsewhere the lines
   follow. When it closes the tool clears itself.
 - The panel's Stop / Target rows show the same −% / +% and money, in red and
   green.
@@ -154,7 +156,7 @@ is built only in visual mode, so validation stays fast.
 | Group | Inputs |
 |---|---|
 | Risk & Execution | `InpRiskPct`, `InpRR`, `InpSLPts`, `InpLimitDist`, `InpDeviation`, `InpMagic`, `InpTrailOn`, `InpTrailStart`, `InpTrailStep` |
-| Tools on start | `InpSessOn`, `InpPocOn`, `InpVwapOn`, `InpHoomanOn` |
+| Tools on start | `InpSessOn`, `InpPocOn`, `InpVwapOn`, `InpHoomanOn`, `InpToolOn` |
 | Tool settings | `InpPOCBars`, `InpPOCBins`, `InpPOCValueArea`, `InpVwapMaxBars`, `InpSessDays`, `InpConflPts` |
 | Session hours (GMT) | `InpAsiaOpen` … `InpNyClose` |
 | Panel colors | `InpPanelBody`, `InpPanelHead`, `InpPanelAccent`, `InpWelcomeSec` |

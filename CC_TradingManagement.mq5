@@ -1,13 +1,13 @@
 //+------------------------------------------------------------------+
 //|                                       CC_TradingManagement.mq5   |
-//|                        CC Trading Management  v4.30              |
+//|                        CC Trading Management  v4.40              |
 //|                                                                  |
 //|   YouTube : https://www.youtube.com/@ChartAndChill               |
 //|   This tool is FREE - forever. Please subscribe to support it.   |
 //+------------------------------------------------------------------+
 #property copyright "ChartAndChill"
 #property link      "https://www.youtube.com/@ChartAndChill"
-#property version   "4.30"
+#property version   "4.40"
 #property description "CC Trading Management - risk & execution panel with a TradingView style position tool"
 #property description "Tools: Sessions | POC + Value Area | VWAP | Hooman levels"
 #property description "YouTube: @ChartAndChill - free forever, please subscribe."
@@ -33,6 +33,7 @@ input bool   InpSessOn       = true;     // Session boxes
 input bool   InpPocOn        = true;     // POC / Volume profile
 input bool   InpVwapOn       = true;     // VWAP
 input bool   InpHoomanOn     = true;     // Hooman levels
+input bool   InpToolOn       = false;    // TP/SL tool (long) on start
 
 input group "===== Tool settings ====="
 input int    InpPOCBars      = 150;      // POC: bars in profile
@@ -159,6 +160,7 @@ bool     gToolLive=false;    // tracking a real position
 ulong    gToolTicket=0;
 double   gToolEntry=0,gToolSL=0,gToolTP=0;
 datetime gToolT1=0,gToolT2=0;       // box time span
+bool     gToolHide=false;           // overlay hidden while a position is open
 double   bEntry=0,bSL=0,bTP=0;      // committed state (before the current drag)
 datetime bT1=0,bT2=0;
 double   gToolPosSL=0,gToolPosTP=0;   // last values seen on the position
@@ -538,11 +540,7 @@ void DrawPanel()
 
    //--- position tool -------------------------------------------------
    Sep("s3",y); y+=9;
-   Cap("c3",y,"POSITION TOOL",accGold); y+=13;
-   MkB("tlo",PAD,y,third,22,"LONG",gcBuySoft,gcBuySoftTx,8);
-   MkB("tsh",PAD+third+4,y,third,22,"SHORT",gcSellSoft,gcSellSoftTx,8);
-   MkB("tcl",PAD+2*(third+4),y,third,22,"CLEAR",gcBtn,gcBtnTx,8);
-   y+=25;
+   Cap("c3",y,"TP / SL TOOL",accGold); y+=13;
    Row("te",y,"Entry","---",gcText);             y+=14;
    Row("ts",y,"Stop","---",gcSell);              y+=14;
    Row("tt",y,"Target","---",gcBuy);             y+=14;
@@ -586,6 +584,7 @@ void DrawPanel()
    y+=25;
    MkB("th",PAD,y,third,22,"HOOMAN",gHooman?gcOn:gcBtn,gHooman?gcOnTx:gcBtnTx,7);
    MkB("thr",PAD+third+4,y,third,22,"HM RESET",gcBtn,gcBtnTx,7);
+   MkB("tps",PAD+2*(third+4),y,third,22,"TP/SL",gcBtn,gcBtnTx,7);
    y+=26;
 
    //--- status + footer ---------------------------------------------
@@ -789,6 +788,8 @@ int OnInit()
       RefreshTools(true);
       UpdInfo();
       UpdClock();
+      if(InpToolOn && gTool==0) ToolPlace(1);
+      ToolButton();
       ChartRedraw();
    }
 
@@ -802,7 +803,7 @@ int OnInit()
    if(!gTester)
    {
       Print("+--------------------------------------------------------+");
-      Print("|            CC TRADING MANAGEMENT  v4.30                |");
+      Print("|            CC TRADING MANAGEMENT  v4.40                |");
       Print("|   FREE forever - please subscribe on YouTube:          |");
       Print("|            youtube.com/@ChartAndChill                  |");
       Print("|   Drag the panel by its title bar. Drag the coloured   |");
@@ -990,9 +991,7 @@ void OnChartEvent(const int id,const long &lparam,const double &dparam,const str
    if(sparam==PX+"rrp"){ gRR=MathMin(50.0,gRR+0.1);        ToolRefit(); UpdInfo(); ChartRedraw(); return; }
 
    //--- position tool
-   if(sparam==PX+"tlo"){ ToolPlace(1); UpdInfo(); ChartRedraw(); return; }
-   if(sparam==PX+"tsh"){ ToolPlace(2); UpdInfo(); ChartRedraw(); return; }
-   if(sparam==PX+"tcl"){ ToolClear(); Say("Position tool cleared"); UpdInfo(); ChartRedraw(); return; }
+   if(sparam==PX+"tps"){ ToolCycle(); UpdInfo(); ChartRedraw(); return; }
 
    //--- execution
    if(sparam==PX+"buy" ){ XMarket(true);  UpdInfo(); ChartRedraw(); return; }
@@ -1629,27 +1628,25 @@ void HoomanDragged(string name)
 }
 
 //==================================================================
-//   POSITION TOOL  (TradingView style)
-//   The two coloured boxes ARE the tool: the green profit box runs
-//   from entry to target, the red loss box from entry to stop.
-//     - drag a box          -> the whole tool moves
-//     - drag its outer corner -> target (green) or stop (red) resizes
-//     - drag its entry corner -> the entry moves
-//     - drag any corner sideways -> the box reaches further / shorter
-//   Entry / Stop / Target lines and labels follow the boxes live while
-//   the mouse is still down. Planner while flat (BUY / SELL use its
-//   levels and lot); attached to the real position once one exists,
-//   where moving Stop / Target modifies the position.
+//   TP / SL TOOL  (TradingView style)
+//   One toggle in TOOLS cycles OFF -> LONG -> SHORT. The draggable
+//   parts are full-width horizontal lines - the smoothest thing MT5
+//   can drag: grab the Target or Stop line anywhere and pull it, grab
+//   the Entry line to move the whole tool, grab the grey handle on
+//   either side of the box to make it wider or narrower. The green
+//   profit box, red loss box, pills and P&L line follow live.
+//   Planner while flat (BUY / SELL use its levels and lot); attached
+//   to the real position once one exists, where moving Stop / Target
+//   modifies the position.
 //==================================================================
 void ToolPlace(int dir)
 {
    double ask=SymbolInfoDouble(_Symbol,SYMBOL_ASK),bid=SymbolInfoDouble(_Symbol,SYMBOL_BID);
    double pt=SymbolInfoDouble(_Symbol,SYMBOL_POINT);
    if(ask<=0.0 || bid<=0.0 || pt<=0.0){ SayErr("No price"); return; }
-   if(gToolLive){ SayErr("A position is open - the tool follows it"); return; }
 
    ObjectsDeleteAll(0,TP_);
-   gTool=dir; gToolLive=false; gToolTicket=0;
+   gTool=dir; gToolLive=false; gToolTicket=0; gToolHide=false;
    double entry=(dir==1)?ask:bid;
    double d=MathMax((double)gSLPts*pt,MinStopDist());
    gToolEntry=NormalizeDouble(entry,_Digits);
@@ -1659,10 +1656,44 @@ void ToolPlace(int dir)
    gToolT2=BarsAhead((int)MathMax(5,InpToolBars));
    ToolCommit();
    ToolDrawAll();
-   Say((dir==1?"LONG":"SHORT")+" tool placed - drag the boxes or their corners");
+   ToolButton();
+   Say((dir==1?"LONG":"SHORT")+" tool - drag the lines, side handles set the width");
 }
 
-//--- the committed state: what the boxes are compared against while dragging
+//--- the TOOLS toggle: OFF -> LONG -> SHORT -> OFF, or show / hide while live
+void ToolCycle()
+{
+   if(gToolLive || ToolHasPosition())
+   {
+      gToolHide=!gToolHide;
+      if(gToolHide){ ObjectsDeleteAll(0,TP_); gToolLive=false; gToolTicket=0; gTool=0; Say("TP/SL overlay hidden"); }
+      else         { ToolSync(); Say("TP/SL overlay shown"); }
+      ToolButton();
+      return;
+   }
+   if(gTool==0)      ToolPlace(1);
+   else if(gTool==1) ToolPlace(2);
+   else { ToolClear(); Say("TP/SL tool off"); }
+   ToolButton();
+}
+
+bool ToolHasPosition()
+{
+   long type=0; double open=0,sl=0,tp=0,vol=0; datetime when=0;
+   return(FindOurPosition(type,open,sl,tp,when,vol)!=0);
+}
+
+//--- label + colour of the toggle button
+void ToolButton()
+{
+   string t="TP/SL"; color bg=gcBtn,fg=gcBtnTx;
+   if(gToolHide)            { t="TP/SL"; }
+   else if(gToolLive)       { t="LIVE";  bg=gcOn;       fg=gcOnTx; }
+   else if(gTool==1)        { t="LONG";  bg=gcBuySoft;  fg=gcBuySoftTx; }
+   else if(gTool==2)        { t="SHORT"; bg=gcSellSoft; fg=gcSellSoftTx; }
+   SetT("tps",t); SetBg("tps",bg); SetC("tps",fg);
+}
+
 void ToolCommit()  { bEntry=gToolEntry; bSL=gToolSL; bTP=gToolTP; bT1=gToolT1; bT2=gToolT2; }
 void ToolRestore() { gToolEntry=bEntry; gToolSL=bSL; gToolTP=bTP; gToolT1=bT1; gToolT2=bT2; }
 
@@ -1671,9 +1702,10 @@ void ToolClear()
    gTool=0; gToolLive=false; gToolTicket=0;
    gToolEntry=0; gToolSL=0; gToolTP=0; gToolPosSL=0; gToolPosTP=0;
    ObjectsDeleteAll(0,TP_);
+   ToolButton();
 }
 
-//--- planner levels follow the steppers until a box is dragged
+//--- planner levels follow the steppers until a line is dragged
 void ToolRefit()
 {
    if(gTool==0 || gToolLive) return;
@@ -1718,8 +1750,11 @@ void ToolSync()
    if(tk==0)
    {
       if(gToolLive){ ToolClear(); Say("Position closed - tool cleared"); }
+      if(gToolHide){ gToolHide=false; ToolButton(); }
       return;
    }
+   if(gToolHide) return;
+
    bool lng=(type==POSITION_TYPE_BUY);
    double pt=SymbolInfoDouble(_Symbol,SYMBOL_POINT);
    double d=MathMax((double)gSLPts*pt,MinStopDist());
@@ -1737,10 +1772,10 @@ void ToolSync()
       gToolT2=BarsAhead((int)MathMax(5,InpToolBars));
       ToolCommit();
       ToolDrawAll();
-      Say("Tool attached to position #"+IntegerToString((long)tk));
+      ToolButton();
+      Say("TP/SL attached to position #"+IntegerToString((long)tk));
       return;
    }
-   // modified elsewhere (mobile, another EA): follow it
    bool changed=false;
    if(sl>0 && MathAbs(sl-gToolPosSL)>=pt/2.0){ gToolSL=sl; changed=true; }
    if(tp>0 && MathAbs(tp-gToolPosTP)>=pt/2.0){ gToolTP=tp; changed=true; }
@@ -1749,54 +1784,56 @@ void ToolSync()
    if(changed){ ToolCommit(); ToolDrawAll(); }
 }
 
-//--- canonical box corners for the current state
-void ToolBoxCorners(string id,datetime &t1,double &p1,datetime &t2,double &p2)
+//--- visual box (never selectable: the lines take the mouse)
+void ToolBox(string id,double pA,double pB,color c)
 {
-   t1=gToolT1; t2=gToolT2;
-   if(id=="zp"){ p1=gToolEntry; p2=gToolTP; }      // corner 0 = entry, corner 1 = target
-   else        { p1=gToolSL;    p2=gToolEntry; }   // corner 0 = stop,  corner 1 = entry
+   RectAt(TP_+id,gToolT1,pA,gToolT2,pB,Translucent(c,InpToolOpacity),true);
 }
 
-//--- a draggable, filled, translucent box
-void ToolBox(string id,color c)
+//--- draggable full-width level
+void ToolHLine(string id,double price,color c,int wd,ENUM_LINE_STYLE st,bool drag)
 {
    string n=TP_+id;
-   datetime t1,t2; double p1,p2;
-   ToolBoxCorners(id,t1,p1,t2,p2);
    bool fresh=(ObjectFind(0,n)<0);
    if(fresh)
    {
-      ObjectCreate(0,n,OBJ_RECTANGLE,0,t1,p1,t2,p2);
-      ObjectSetInteger(0,n,OBJPROP_FILL,true);
-      ObjectSetInteger(0,n,OBJPROP_BACK,true);
-      ObjectSetInteger(0,n,OBJPROP_SELECTABLE,true);
-      ObjectSetInteger(0,n,OBJPROP_SELECTED,true);          // handles visible, ready to drag
-      ObjectSetInteger(0,n,OBJPROP_HIDDEN,true);
-      ObjectSetString (0,n,OBJPROP_TOOLTIP,"Drag the box to move the tool, drag a corner to resize");
-   }
-   ObjectMove(0,n,0,t1,p1);
-   ObjectMove(0,n,1,t2,p2);
-   ObjectSetInteger(0,n,OBJPROP_COLOR,Translucent(c,InpToolOpacity));
-}
-
-//--- crisp bounded edge line (not selectable, the boxes take the mouse)
-void ToolLine(string id,double price,color c,int wd,ENUM_LINE_STYLE st)
-{
-   string n=TP_+id;
-   if(ObjectFind(0,n)<0)
-   {
-      ObjectCreate(0,n,OBJ_TREND,0,gToolT1,price,gToolT2,price);
-      ObjectSetInteger(0,n,OBJPROP_RAY_RIGHT,false);
+      ObjectCreate(0,n,OBJ_HLINE,0,0,price);
       ObjectSetInteger(0,n,OBJPROP_BACK,false);
-      ObjectSetInteger(0,n,OBJPROP_SELECTABLE,false);
       ObjectSetInteger(0,n,OBJPROP_HIDDEN,true);
       ObjectSetInteger(0,n,OBJPROP_ZORDER,3);
    }
-   ObjectMove(0,n,0,gToolT1,price);
-   ObjectMove(0,n,1,gToolT2,price);
+   ObjectSetDouble (0,n,OBJPROP_PRICE,0,price);
    ObjectSetInteger(0,n,OBJPROP_COLOR,c);
    ObjectSetInteger(0,n,OBJPROP_WIDTH,wd);
    ObjectSetInteger(0,n,OBJPROP_STYLE,st);
+   ObjectSetInteger(0,n,OBJPROP_SELECTABLE,drag);
+   ObjectSetInteger(0,n,OBJPROP_SELECTED,drag);      // always armed: one gesture drags it
+   ObjectSetString (0,n,OBJPROP_TOOLTIP,drag?"Drag":"");
+}
+
+//--- draggable side handle: a short vertical segment from stop to target
+void ToolEdge(string id,datetime t)
+{
+   string n=TP_+id;
+   double lo=MathMin(gToolSL,gToolTP),hi=MathMax(gToolSL,gToolTP);
+   bool fresh=(ObjectFind(0,n)<0);
+   if(fresh)
+   {
+      ObjectCreate(0,n,OBJ_TREND,0,t,lo,t,hi);
+      ObjectSetInteger(0,n,OBJPROP_RAY_RIGHT,false);
+      ObjectSetInteger(0,n,OBJPROP_BACK,false);
+      ObjectSetInteger(0,n,OBJPROP_HIDDEN,true);
+      ObjectSetInteger(0,n,OBJPROP_SELECTABLE,true);
+      ObjectSetInteger(0,n,OBJPROP_SELECTED,true);
+      ObjectSetInteger(0,n,OBJPROP_ZORDER,3);
+      ObjectSetString (0,n,OBJPROP_TOOLTIP,"Drag to change the box width");
+   }
+   ObjectMove(0,n,0,t,lo);
+   ObjectMove(0,n,1,t,hi);
+   ObjectSetInteger(0,n,OBJPROP_SELECTED,true);
+   ObjectSetInteger(0,n,OBJPROP_COLOR,C'150,155,170');
+   ObjectSetInteger(0,n,OBJPROP_WIDTH,3);
+   ObjectSetInteger(0,n,OBJPROP_STYLE,STYLE_SOLID);
 }
 
 //--- TradingView style labels: filled pills centred in the box, a grey
@@ -1897,26 +1934,19 @@ void PillXY(string n,int x,int y,string text,color bg,int fs,bool visible)
 }
 
 //--- everything from the current state
-void ToolDrawAll()
-{
-   if(gTool==0) return;
-   ToolBox("zp",InpTpColor);
-   ToolBox("zl",InpSlColor);
-   ToolLine("tp",gToolTP,InpTpColor,2,STYLE_SOLID);
-   ToolLine("sl",gToolSL,InpSlColor,2,STYLE_SOLID);
-   ToolLine("en",gToolEntry,InpEntryColor,1,STYLE_DASH);
-   ToolLabels();
-}
+void ToolDrawAll(){ ToolDrawExcept(""); }
 
-//--- everything except the box under the mouse
+//--- everything except the object under the mouse
 void ToolDrawExcept(string skip)
 {
    if(gTool==0) return;
-   if(skip!="zp") ToolBox("zp",InpTpColor);
-   if(skip!="zl") ToolBox("zl",InpSlColor);
-   ToolLine("tp",gToolTP,InpTpColor,2,STYLE_SOLID);
-   ToolLine("sl",gToolSL,InpSlColor,2,STYLE_SOLID);
-   ToolLine("en",gToolEntry,InpEntryColor,1,STYLE_DASH);
+   ToolBox("zp",gToolEntry,gToolTP,InpTpColor);
+   ToolBox("zl",gToolEntry,gToolSL,InpSlColor);
+   if(skip!="tp") ToolHLine("tp",gToolTP,InpTpColor,2,STYLE_SOLID,true);
+   if(skip!="sl") ToolHLine("sl",gToolSL,InpSlColor,2,STYLE_SOLID,true);
+   if(skip!="en") ToolHLine("en",gToolEntry,InpEntryColor,1,STYLE_DASH,!gToolLive);
+   if(skip!="tl") ToolEdge("tl",gToolT1);
+   if(skip!="tr") ToolEdge("tr",gToolT2);
    ToolLabels();
 }
 
@@ -1924,8 +1954,7 @@ void ToolDrawExcept(string skip)
 void ToolRefresh()
 {
    if(gTool==0) return;
-   datetime ahead=BarsAhead(3);
-   if(bT2<ahead)
+   if(bT2<BarsAhead(3))
    {
       bT2=BarsAhead((int)MathMax(5,InpToolBars));
       gToolT2=bT2;
@@ -1945,63 +1974,48 @@ double ToolLot()
    return(LotByRisk((gTool==1)?ORDER_TYPE_BUY:ORDER_TYPE_SELL,gToolEntry,gToolSL,rm));
 }
 
-//--- which box no longer matches the current state = the one being dragged
-string ToolDraggedBox()
+//--- which handle no longer matches the state = the one being dragged
+string ToolDraggedObj()
 {
    double pt=SymbolInfoDouble(_Symbol,SYMBOL_POINT);
    long per=PeriodSeconds();
-   string ids[2]={"zp","zl"};
-   for(int k=0;k<2;k++)
-   {
-      string n=TP_+ids[k];
-      if(ObjectFind(0,n)<0) continue;
-      datetime t1,t2; double p1,p2;
-      ToolBoxCorners(ids[k],t1,p1,t2,p2);
-      if(MathAbs(ObjectGetDouble(0,n,OBJPROP_PRICE,0)-p1)>=pt/2.0) return(ids[k]);
-      if(MathAbs(ObjectGetDouble(0,n,OBJPROP_PRICE,1)-p2)>=pt/2.0) return(ids[k]);
-      if(MathAbs((long)ObjectGetInteger(0,n,OBJPROP_TIME,0)-(long)t1)>=per/2) return(ids[k]);
-      if(MathAbs((long)ObjectGetInteger(0,n,OBJPROP_TIME,1)-(long)t2)>=per/2) return(ids[k]);
-   }
+   string n;
+   n=TP_+"tp"; if(ObjectFind(0,n)>=0 && MathAbs(ObjectGetDouble(0,n,OBJPROP_PRICE,0)-gToolTP)>=pt/2.0) return("tp");
+   n=TP_+"sl"; if(ObjectFind(0,n)>=0 && MathAbs(ObjectGetDouble(0,n,OBJPROP_PRICE,0)-gToolSL)>=pt/2.0) return("sl");
+   n=TP_+"en"; if(ObjectFind(0,n)>=0 && MathAbs(ObjectGetDouble(0,n,OBJPROP_PRICE,0)-gToolEntry)>=pt/2.0) return("en");
+   n=TP_+"tl"; if(ObjectFind(0,n)>=0 && MathAbs((long)ObjectGetInteger(0,n,OBJPROP_TIME,0)-(long)gToolT1)>=per/2) return("tl");
+   n=TP_+"tr"; if(ObjectFind(0,n)>=0 && MathAbs((long)ObjectGetInteger(0,n,OBJPROP_TIME,0)-(long)gToolT2)>=per/2) return("tr");
    return("");
 }
 
-//--- read a box and work out the tool it describes, relative to the
-//--- committed state: a whole-box shift moves everything, a single
-//--- corner resizes that edge
+//--- read one handle and work out the tool it describes
 bool ToolDerive(string id,double &nE,double &nS,double &nT,datetime &nT1,datetime &nT2)
 {
    string n=TP_+id;
    if(ObjectFind(0,n)<0) return(false);
-   double a0p=ObjectGetDouble(0,n,OBJPROP_PRICE,0),a1p=ObjectGetDouble(0,n,OBJPROP_PRICE,1);
-   long   a0t=(long)ObjectGetInteger(0,n,OBJPROP_TIME,0),a1t=(long)ObjectGetInteger(0,n,OBJPROP_TIME,1);
-   double pt=SymbolInfoDouble(_Symbol,SYMBOL_POINT);
-   long   per=PeriodSeconds();
+   long per=PeriodSeconds();
+   nE=gToolEntry; nS=gToolSL; nT=gToolTP; nT1=gToolT1; nT2=gToolT2;
 
-   double s0p=(id=="zp")?bEntry:bSL;
-   double s1p=(id=="zp")?bTP:bEntry;
-   double dp0=a0p-s0p,dp1=a1p-s1p;
-   long   dt0=a0t-(long)bT1,dt1=a1t-(long)bT2;
-   bool m0=(MathAbs(dp0)>=pt/2.0 || MathAbs(dt0)>=per/2);
-   bool m1=(MathAbs(dp1)>=pt/2.0 || MathAbs(dt1)>=per/2);
-
-   nE=bEntry; nS=bSL; nT=bTP; nT1=bT1; nT2=bT2;
-   if(!m0 && !m1) return(false);
-
-   if(m0 && m1 && MathAbs(dp0-dp1)<pt && MathAbs(dt0-dt1)<per)
+   if(id=="tp")      nT=NormalizeDouble(ObjectGetDouble(0,n,OBJPROP_PRICE,0),_Digits);
+   else if(id=="sl") nS=NormalizeDouble(ObjectGetDouble(0,n,OBJPROP_PRICE,0),_Digits);
+   else if(id=="en")
    {
-      // the whole box was dragged: move the entire tool
-      nE=bEntry+dp0; nS=bSL+dp0; nT=bTP+dp0;
-      nT1=(datetime)((long)bT1+dt0); nT2=(datetime)((long)bT2+dt0);
+      if(gToolLive) return(false);                         // the fill price is fixed
+      double p=NormalizeDouble(ObjectGetDouble(0,n,OBJPROP_PRICE,0),_Digits);
+      double d=p-gToolEntry;
+      nE=p; nS=NormalizeDouble(gToolSL+d,_Digits); nT=NormalizeDouble(gToolTP+d,_Digits);
    }
-   else
+   else if(id=="tl")
    {
-      if(m0){ if(id=="zp") nE=a0p; else nS=a0p; nT1=(datetime)a0t; }
-      if(m1){ if(id=="zp") nT=a1p; else nE=a1p; nT2=(datetime)a1t; }
+      nT1=(datetime)ObjectGetInteger(0,n,OBJPROP_TIME,0);
+      if((long)nT2-(long)nT1<per*3) nT1=(datetime)((long)nT2-per*3);
    }
-   if(gToolLive) nE=bEntry;                         // the fill price is fixed
-
-   nE=NormalizeDouble(nE,_Digits); nS=NormalizeDouble(nS,_Digits); nT=NormalizeDouble(nT,_Digits);
-   if((long)nT2-(long)nT1<per*3) nT2=(datetime)((long)nT1+per*3);
+   else if(id=="tr")
+   {
+      nT2=(datetime)ObjectGetInteger(0,n,OBJPROP_TIME,0);
+      if((long)nT2-(long)nT1<per*3) nT2=(datetime)((long)nT1+per*3);
+   }
+   else return(false);
    return(true);
 }
 
@@ -2012,11 +2026,11 @@ bool ToolValid(double e,double s,double t)
    return(t<e-minD && s>e+minD);
 }
 
-//--- live follow while the mouse is still down on a box
+//--- live follow while the mouse is still down on a handle
 void ToolPreview()
 {
    if(gTool==0) return;
-   string id=ToolDraggedBox();
+   string id=ToolDraggedObj();
    if(id=="") return;
    double nE,nS,nT; datetime nT1,nT2;
    if(!ToolDerive(id,nE,nS,nT,nT1,nT2)) return;
@@ -2027,13 +2041,11 @@ void ToolPreview()
    ChartRedraw();
 }
 
-//--- mouse released on a box: validate, apply, commit
+//--- mouse released on a handle: validate, apply, commit
 void ToolDragged(string name)
 {
    if(gTool==0) return;
    string id=StringSubstr(name,StringLen(TP_));
-   if(id!="zp" && id!="zl"){ ToolDrawAll(); return; }
-
    double nE,nS,nT; datetime nT1,nT2;
    if(!ToolDerive(id,nE,nS,nT,nT1,nT2)){ ToolDrawAll(); ChartRedraw(); return; }
    if(!ToolValid(nE,nS,nT))
