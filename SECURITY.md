@@ -9,7 +9,8 @@ through GitHub:
 
 1. Open the repository's **Security** tab and choose **Report a vulnerability**,
    where that option is available.
-2. If it is not available, send a private message to the owner on GitHub.
+2. If it is not available, open an issue that only asks the owner for a private
+   way to send a security report. Do not put any details of the problem in it.
 
 Please include the EA version (`#property version` in the source), the
 MetaTrader 5 build, what you did, what happened and what you expected. Do not
@@ -33,7 +34,8 @@ Only the latest version on the default branch receives fixes.
 [@ChartAndChill](https://github.com/ChartAndChill)، گزارش دهید:
 
 1. در صورت وجود این گزینه، به زبانه‌ی **Security** مخزن بروید و **Report a vulnerability** را انتخاب کنید.
-2. اگر این گزینه وجود ندارد، در گیت‌هاب یک پیام خصوصی برای مالک مخزن بفرستید.
+2. اگر این گزینه وجود ندارد، یک issue باز کنید و فقط از مالک مخزن بخواهید راهی خصوصی
+   برای فرستادن گزارش امنیتی به شما بدهد. هیچ جزئیاتی از خودِ مشکل را در آن ننویسید.
 
 لطفاً نسخه‌ی اکسپرت (`#property version` در سورس)، بیلد متاتریدر ۵، کاری که انجام
 دادید، آنچه اتفاق افتاد و آنچه انتظار داشتید را بنویسید. رمز حساب یا هیچ اطلاعات
