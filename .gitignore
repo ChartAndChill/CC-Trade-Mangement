@@ -1,0 +1,21 @@
+# Compiled MetaTrader programs (build output of MetaEditor, F7)
+*.ex4
+*.ex5
+
+# MetaEditor / terminal logs
+*.log
+
+# Local settings and backups
+*.bak
+*.tmp
+*.swp
+*~
+
+# Editor folders
+.vscode/
+.idea/
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
