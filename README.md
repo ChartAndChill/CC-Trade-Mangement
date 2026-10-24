@@ -237,7 +237,8 @@ in the source). Changes are listed in the commit history.
 
 ## License
 
-Proprietary. Copyright (c) 2026 ChartAndChill. All rights reserved. See
+Free to download and use for trading. Copying, modifying or redistributing
+the code needs written permission. Copyright (c) 2026 ChartAndChill. See
 [LICENSE](LICENSE).
 
 ---
@@ -481,7 +482,7 @@ Proprietary. Copyright (c) 2026 ChartAndChill. All rights reserved. See
 
 ### مجوز
 
-انحصاری (Proprietary). Copyright (c) 2026 ChartAndChill. همه‌ی حقوق محفوظ است. فایل
-[LICENSE](LICENSE) را ببینید.
+دانلود و استفاده برای معامله رایگان است. کپی، تغییر یا انتشار دوباره‌ی کد به اجازه‌ی کتبی
+نیاز دارد. Copyright (c) 2026 ChartAndChill. فایل [LICENSE](LICENSE) را ببینید.
 
 </div>
